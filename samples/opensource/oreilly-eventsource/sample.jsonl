@@ -1,0 +1,3 @@
+{"method":"GET","url":"https://sse.example.com/api/dash/data","headers":{"X-Requested-With":"XMLHttpRequest"},"status":200,"response":"{\"status\":\"ok\",\"cpu\":41,\"mem\":62}","mime":"application/json"}
+{"method":"GET","url":"https://sse.example.com/api/dash/alerts","headers":{"X-Requested-With":"XMLHttpRequest"},"status":200,"response":"{\"alerts\":[]}","mime":"application/json"}
+{"method":"GET","url":"https://sse.example.com/api/sse/stream","headers":{"Accept":"text/event-stream"},"status":200,"response":"data: {\"cpu\":41}\n\n","mime":"text/event-stream"}

@@ -1,0 +1,3 @@
+{"method": "GET", "url": "https://blazedemo.com/reserve.php", "post": ""}
+{"method": "POST", "url": "https://blazedemo.com/purchase.php", "post": ""}
+{"method": "POST", "url": "https://blazedemo.com/confirmation.php", "post": ""}

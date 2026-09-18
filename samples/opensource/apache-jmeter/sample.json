@@ -1,0 +1,12 @@
+{
+  "source": "apache/jmeter bin/testfiles/{AuthManagerTestPlan,Http4ImplDigestAuth,Http4ImplPreemptiveBasicAuth,TestCookieManager}.jmx",
+  "url": "https://github.com/apache/jmeter/tree/master/bin/testfiles",
+  "auth_form": "basic|digest|cookie",
+  "dynamic_values": [
+    "login",
+    "password"
+  ],
+  "entries": 3,
+  "note": "官方认证形态样本: HTTP Basic Auth(Authorization header), Digest Auth, Cookie Manager。验证认证形态识别 + CookieManager 导出口径。entries 按 loader 口径 = 主样本 AuthManagerTestPlan.jmx 的 3 个采样器(同目录其余 jmx 为佐证材料, loader 只读首个)。",
+  "note": "官方认证形态样本: HTTP Basic Auth(Authorization header), Digest Auth, Cookie Manager。验证认证形态识别 + CookieManager 导出口径。"
+}

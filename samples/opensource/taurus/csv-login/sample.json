@@ -1,0 +1,12 @@
+{
+  "source": "Blazemeter/taurus examples/jmeter/csv-usage.yml",
+  "url": "https://github.com/Blazemeter/taurus/blob/master/examples/jmeter/csv-usage.yml",
+  "auth_form": "form (username/password CSV 参数化)",
+  "dynamic_values": [
+    "username",
+    "password",
+    "page"
+  ],
+  "entries": 2,
+  "note": "CSV 数据源 + 表单登录: logins.csv 提供 username/password, pages.csv 提供页面路径。验证表单认证识别 + CSV 参数化导出。"
+}

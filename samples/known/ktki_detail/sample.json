@@ -1,0 +1,8 @@
+{
+  "source": "BlazeMeter Chrome 扩展录制 KTKI 拣货单查询接口 (本地 YAML)",
+  "url": "file://D:/Users/Downloads/拣货单查询接口-Combined-JMeter-and-Selenium.yaml",
+  "auth_form": "cookie+CAS",
+  "dynamic_values": ["pickingId", "pickingOrderNo", "objectId", "warehouseId", "divisionCode", "startTime", "orgCode"],
+  "entries": 21,
+  "note": "详情页 20 接口序列: 登录 option 前置 + SPM_CLIVET_CONFIG_001 等配置参数重复调用 + getPickingDetails(pickingId/pickingOrderNo 参数化)。覆盖 cookie 会话 + x-gr-orgcode 组织上下文。"
+}

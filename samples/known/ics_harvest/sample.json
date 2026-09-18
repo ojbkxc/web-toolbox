@@ -1,0 +1,8 @@
+{
+  "source": "iserver/scripts/.ics_harvest.jsonl 本地录制 (ICS UAT)",
+  "url": "file://D:/GitHub/iserver/scripts/.ics_harvest.jsonl",
+  "auth_form": "cookie+token",
+  "dynamic_values": ["orgCodes", "userId", "divisionCode", "typeCode", "orgCode"],
+  "entries": 9,
+  "note": "登录链: login/option -> getSetProfile(响应带 __token 供后续 isc-token 头) -> 组织/角色/用户信息(orgCode/userId/divisionCode 依赖上游响应)。认证是 Cookie 会话 + __token。"
+}

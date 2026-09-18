@@ -1,0 +1,8 @@
+{
+  "source": "Blazemeter/taurus examples/functional/postman-sample-collection.json",
+  "url": "https://github.com/Blazemeter/taurus/blob/master/examples/functional/postman-sample-collection.json",
+  "auth_form": "none",
+  "dynamic_values": [],
+  "entries": 3,
+  "note": "Postman 集合: 纯 HTTP 请求+原始 body, 无认证。验证 postman 形态解析(collection v2 结构)。"
+}

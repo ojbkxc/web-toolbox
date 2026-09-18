@@ -1,0 +1,11 @@
+{
+  "source": "OAuth2 授权码流 (RFC 6749 §4.1) 典型旅程 —— /authorize 重定向 → /token 换取 → Bearer 调 API",
+  "url": "https://datatracker.ietf.org/doc/html/rfc6749#section-4.1",
+  "auth_form": "token (OAuth2 authorization_code + Bearer)",
+  "dynamic_values": [
+    "access_token",
+    "sessionId"
+  ],
+  "entries": 6,
+  "note": "OAuth2 授权码流样本(JSON body 形态): authorize→token→资源调用三段式。/oauth/callrecord 录 2 次, body 里 access_token 每次不同(token 响应产出) → diff 出动态 + 溯源挂上 token 响应的提取链。GET userinfo 无 body、authorize 表单参数在 query —— 不参与 body diff(引擎已知形态边界: 表单体不走 JSON diff)。验证 Bearer 认证识别与 access_token 值溯源在 OAuth2 形态下成立。"
+}

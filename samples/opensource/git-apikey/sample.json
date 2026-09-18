@@ -1,0 +1,11 @@
+{
+  "source": "OpenAPI petstore (OpenAPI-Specification / petstore.yaml 展开) + REST Guideline 常见 X-Request-Id 形态",
+  "url": "https://github.com/OAI/OpenAPI-Specification/blob/main/examples/v3.0/petstore.yaml",
+  "auth_form": "token (Bearer api-key)",
+  "dynamic_values": [
+    "uuid",
+    "petId"
+  ],
+  "entries": 5,
+  "note": "UUID 动态值样本: 8-4-4-4-12 形态跨请求引用 —— create 返回 UUID, 后续查询 body 原样带回; petcreate 录 2 次各返回不同 UUID, petquery 的 petId 随之不同 → diff 出动态 + 值溯源命中 create 响应。验证 classifyDynamic UUID 正则与值溯源对 UUID 同样成立, 不只对 13 位单号。"
+}

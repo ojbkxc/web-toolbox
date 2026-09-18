@@ -1,0 +1,12 @@
+{
+  "source": "k6 examples/html_form_post.js + Blazemeter csv-login 表单流形态",
+  "url": "https://github.com/grafana/k6/blob/master/examples/html_form_post.js",
+  "auth_form": "form (x-www-form-urlencoded body 登录)",
+  "dynamic_values": [
+    "sessionid",
+    "orderNo",
+    "userId"
+  ],
+  "entries": 6,
+  "note": "表单体 diff 样本(v1.0.18 缺口收口): 同一登录接口录 2 次, body 全 k=v 形态且值相同(user/pass) → 无动态(响应 sessionid 不同不进 body diff); order 表单接口录 2 次, body 的 sessionid 随登录响应变 → diff 出动态 + 值溯源挂上 login 响应的 data.sessionid 提取链。验证表单体与 JSON 同管线: diff/分类/替换/溯源全下游一致。"
+}

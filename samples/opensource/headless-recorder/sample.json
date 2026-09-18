@@ -1,0 +1,8 @@
+{
+  "source": "checkly/headless-recorder (Chrome 扩展, UI 参照样本)",
+  "url": "https://github.com/checkly/headless-recorder",
+  "auth_form": "none",
+  "dynamic_values": [],
+  "entries": 0,
+  "note": "UI 交互范式参照: popup 三态(Home 空态→Recording 录制中→Results 录完出代码), 圆形记录按钮, PAUSE/RESTART/STOP 双按钮, Results 双 tab(Puppeteer/Playwright) 展示生成代码。我们的 popup/面板 UI 应参照这套极简交互(而非现在的密排工具条)。"
+}

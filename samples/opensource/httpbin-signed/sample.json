@@ -1,0 +1,13 @@
+{
+  "source": "common REST sign 约定 (weixin-pay/Tianwen 等带 sign/nonce/timestamp 的接口形态)",
+  "url": "https://github.com/wechatpay-apiv3/wechatpay-apache-httpclient (签名头形态参照)",
+  "auth_form": "token (Bearer) + sign 头",
+  "dynamic_values": [
+    "sign",
+    "nonce",
+    "timestamp",
+    "orderNo"
+  ],
+  "entries": 6,
+  "note": "签名动态值样本: sign/nonce/timestamp 三连(同接口录 2 次, sign+nonce 必变, timestamp 必变) + orderNo 跨请求引用。验证 classifyDynamic 命名启发式(sign|signature|nonce)与 timestamp 分类, 以及签名类动态值不参与值溯源(上游响应里不会有相同 sign —— 值溯源对它自然落空, 恰是要的保守行为)。"
+}

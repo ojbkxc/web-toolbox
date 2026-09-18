@@ -1,0 +1,12 @@
+{
+  "source": "grafana/k6 examples/{http_basic_auth,http_digest_auth,cookies,html_form_post,jwt}.js",
+  "url": "https://github.com/grafana/k6/tree/master/examples",
+  "auth_form": "basic|digest|cookie|jwt",
+  "dynamic_values": [
+    "user",
+    "passwd",
+    "token"
+  ],
+  "entries": 5,
+  "note": "k6 认证形态大全: URL 内嵌 user:passwd、Authorization: Basic b64、Cookie jar、表单 POST、JWT。验证认证形态识别表覆盖度。"
+}

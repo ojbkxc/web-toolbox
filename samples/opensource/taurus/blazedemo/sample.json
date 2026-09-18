@@ -1,0 +1,8 @@
+{
+  "source": "Blazemeter/taurus examples/blazemeter-demo/existing-BlazeDemo.jmx",
+  "url": "https://github.com/Blazemeter/taurus/blob/master/examples/blazemeter-demo/existing-BlazeDemo.jmx",
+  "auth_form": "none (公开站下单流)",
+  "dynamic_values": [],
+  "entries": 3,
+  "note": "BlazeDemo 下单三步流: reserve.php -> purchase.php -> confirmation.php, 表单 POST 形态。验证无认证形态下登录链识别不误报。"
+}

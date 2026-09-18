@@ -1,0 +1,10 @@
+{
+  "source": "O'Reilly Blueprint of_Server-Sent Events/Build a real-time dashboard (真实 SSE 端点形态)",
+  "url": "https://github.com/Paul-Ladyman/bp_Server-Sent-Events",
+  "auth_form": "none",
+  "dynamic_values": [
+    "stream"
+  ],
+  "entries": 3,
+  "note": "SSE 净化判定样本(通用性证据, v1.0.65): Dash 拉仪表盘(API JSON), Server-Sent Events 端点 GET /api/sse/stream 响应 mime=text/event-stream。真实浏览器录制时引擎把 CDP responseReceived 的 mimeType 存进条目 mime —— SSE 条目的信号在 mime 不在请求头表(isSkippable 主路径)。断言: SSE 条被 filterSkippable 剔除、API JSON 业务条不误杀。对照组: 混录一集(源里另有 misc API)验证同批共存。"
+}

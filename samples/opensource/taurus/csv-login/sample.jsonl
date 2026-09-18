@@ -1,0 +1,2 @@
+{"method":"GET","url":"http://blazedemo.com/","post":"","headers":{}}
+{"method":"POST","url":"http://blazedemo.com/purchase.php","post":"username=${username}&password=${password}","headers":{"Content-Type":"application/x-www-form-urlencoded"}}

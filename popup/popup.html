@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Web 工具箱</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font: 13px/1.5 system-ui, "Microsoft YaHei", sans-serif; width: 280px; color: #222; background: #fff; }
+  button { font-family: inherit; }
+
+  .hd { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; }
+  .hd .logo { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg,#1a73e8,#0d47a1); color: #fff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .hd h1 { font-size: 14px; font-weight: 600; }
+  .badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 3px 10px; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+  .badge.idle { background: #f1f3f4; color: #5f6368; }
+  .badge.rec { background: #fce8e6; color: #d93025; }
+  .badge.pause { background: #fef7e0; color: #b06000; }
+  .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .badge.rec .dot { animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%{opacity:1;} 50%{opacity:.25;} 100%{opacity:1;} }
+
+  .body { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .bigbtn { width: 100%; border: none; border-radius: 10px; background: #d93025; color: #fff; font-size: 14px; font-weight: 700; padding: 12px 0; cursor: pointer; transition: opacity .12s; }
+  .bigbtn:hover { opacity: .9; }
+  .bigbtn.secondary { background: #f1f3f4; color: #1a73e8; font-weight: 600; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  /* 导出区 */
+  .sec { font-size: 11px; color: #999; font-weight: 700; letter-spacing: .5px; }
+  .sec b { color: #1a73e8; font-weight: 700; }
+  .row4 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .exp { border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; padding: 8px 10px; font-size: 12px; font-weight: 600; cursor: pointer; text-align: left; }
+  .exp:hover { background: #f5f8ff; border-color: #c6dafc; }
+  .exp:disabled { opacity: .45; cursor: default; background: #fff; }
+  .exp .s { display: block; font-size: 10px; color: #888; font-weight: 400; margin-top: 1px; }
+  .exp.pri { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+  .exp.pri .s { color: #c6dafc; }
+  .exp.pri:hover { opacity: .9; background: #1a73e8; }
+
+  .site { font-size: 12px; color: #666; background: #f8f9fa; border-radius: 8px; padding: 8px 10px; word-break: break-all; display: flex; align-items: center; gap: 8px; }
+  .site b { color: #222; }
+  .site .sp { min-width: 4px; }
+  .addsite { flex: none; border: 1px solid #1a73e8; border-radius: 6px; background: #fff; color: #1a73e8; font-size: 11px; font-weight: 700; padding: 3px 8px; cursor: pointer; }
+  .addsite:hover { background: #e8f0fe; }
+  .ready { color: #188038; font-size: 11px; font-weight: 700; flex: none; }
+  .hint { font-size: 11px; color: #888; line-height: 1.6; }
+  .link { color: #1a73e8; background: none; border: none; cursor: pointer; font-size: 12px; text-decoration: underline; padding: 0; }
+  .sp { flex: 1; }
+</style>
+</head>
+<body>
+  <div class="hd">
+    <span class="logo">W</span>
+    <h1>Web 工具箱</h1>
+    <span class="sp"></span>
+    <span class="badge idle" id="stBadge"><span class="dot"></span><span id="stLabel">IDLE</span></span>
+  </div>
+
+  <div class="body">
+    <button class="bigbtn" id="openPanel" title="列表过滤/勾选导出集/重放/冒烟/AI 分析都在侧栏">↗ 打开侧栏</button>
+    <div class="row2">
+      <button class="bigbtn secondary" id="btnRecord">● 开始录制</button>
+      <button class="bigbtn secondary" id="btnStop" style="display:none">■ 停止</button>
+      <button class="bigbtn secondary" id="btnPause" style="display:none">⏸ 暂停</button>
+      <button class="bigbtn secondary" id="btnResume" style="display:none">▶ 继续</button>
+    </div>
+
+    <div class="sec" id="expCount" style="text-align:center" role="status" aria-live="polite">已录 0 条</div>
+    <div class="row4">
+      <button class="exp pri" id="btnExpAll" title="JSONL + JMeter + Python 三个文件一起下载">⬇ 全部下载<div class="s">JSONL / JMX / PY</div></button>
+      <button class="exp" id="btnExpJmx" title="JMeter 压测脚本(.jmx, 登录前置自动包仅一次控制器)">JMeter<div class="s">.jmx</div></button>
+      <button class="exp" id="btnExpPy" title="Python requests 重放脚本(.py, Cookie 配合 Cookie 桥 state 文件)">Python<div class="s">.py</div></button>
+      <button class="exp" id="btnExpJsonl" title="JSONL: 喂 AI / 工具链的同构格式">JSONL<div class="s">工具链</div></button>
+      <button class="exp" id="btnExpHar" title="HAR: 通用流量格式(可导入 Charles/Postman)">HAR<div class="s">通用格式</div></button>
+    </div>
+
+    <div class="site" id="site">当前标签页: 检测中…<span class="sp"></span></div>
+    <div class="hint">导出的是<b>全部</b>录制; 挑条目/过滤/重放/冒烟请开侧栏。<br>顶部"正在调试"黄条是正常安全提示。</div>
+    <button class="link" id="opt">⚙ 配置域名 / AI 接口</button>
+  </div>
+
+  <script src="../common.js"></script>
+  <script src="../auth.js"></script>
+  <script src="../correlate.js"></script>
+  <script src="../jmx.js"></script>
+  <script src="../pyscript.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

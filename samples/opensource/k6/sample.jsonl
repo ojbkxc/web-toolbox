@@ -1,0 +1,5 @@
+{"method":"GET","url":"http://user:passwd@httpbin.org/basic-auth/user/passwd","post":"","headers":{"Authorization":"Basic dXNlcjpwYXNzd2Q="}}
+{"method":"GET","url":"http://httpbin.org/basic-auth/user/passwd","post":"","headers":{"Authorization":"Basic dXNlcjpwYXNzd2Q="}}
+{"method":"GET","url":"http://httpbin.org/cookies","post":"","headers":{"Cookie":"name=value1; name2=value2"}}
+{"method":"POST","url":"http://httpbin.org/forms/post","post":"custname=test&custtel=123&custemail=a@b.com&size=medium","headers":{"Content-Type":"application/x-www-form-urlencoded"}}
+{"method":"GET","url":"https://example.com/api/data","post":"","headers":{"Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0"}}

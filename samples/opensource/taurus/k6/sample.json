@@ -1,0 +1,8 @@
+{
+  "source": "Blazemeter/taurus examples/k6/k6_example.js",
+  "url": "https://github.com/Blazemeter/taurus/blob/master/examples/k6/k6_example.js",
+  "auth_form": "none",
+  "dynamic_values": [],
+  "entries": 1,
+  "note": "k6 单请求脚本。验证跨工具导出形态。"
+}

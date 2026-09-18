@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Web 工具箱 - 配置</title>
+<style>
+  body { font: 13px/1.6 system-ui, "Microsoft YaHei", sans-serif; margin: 0; padding: 24px; color: #222; min-width: 580px; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 24px 0 8px; }
+  .sub { color: #888; font-size: 12px; margin-bottom: 20px; }
+  .row { display: flex; gap: 8px; margin-bottom: 12px; }
+  input[type=text], input[type=password] { flex: 1; padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+  button { padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 13px; }
+  button.primary { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+  button:hover { opacity: .9; }
+  ul { list-style: none; padding: 0; margin: 0; border: 1px solid #eee; border-radius: 4px; }
+  li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #f2f2f2; }
+  li:last-child { border-bottom: none; }
+  li .host { flex: 1; }
+  li .host .covers { font-size: 11px; color: #b06000; background: #fff7e6; border-radius: 3px; padding: 1px 6px; margin-left: 6px; }
+  li .state { font-size: 12px; color: #999; }
+  li .state.ok { color: #188038; }
+  .empty { color: #aaa; padding: 16px; text-align: center; }
+  .tip { margin-top: 12px; font-size: 12px; color: #888; background: #f8f9fa; padding: 10px 12px; border-radius: 4px; }
+  .tip code { background: #eee; padding: 1px 5px; border-radius: 3px; }
+  .grid { display: grid; grid-template-columns: 90px 1fr; gap: 8px 12px; align-items: center; margin-bottom: 12px; }
+  .grid label { color: #555; font-size: 12px; text-align: right; }
+  .msg { font-size: 12px; margin-left: 8px; }
+  .msg.ok { color: #188038; }
+  .msg.err { color: #d93025; }
+</style>
+</head>
+<body>
+<h1>Web 工具箱</h1>
+<div class="sub">域名白名单 + AI 分析配置。工具只对下面列出的域名工作。</div>
+
+<h2>目标域名</h2>
+<div class="row">
+  <input type="text" id="input" placeholder="域名,如 example.com(支持子域)" aria-label="域名输入, 如 example.com" />
+  <button class="primary" id="add">添加并授权</button>
+</div>
+<ul id="list"></ul>
+
+<h2>AI 分析接口 (OpenAI 兼容)</h2>
+<div class="grid">
+  <label>API 地址</label>
+  <input type="text" id="llmUrl" placeholder="https://api.lxseek.com/v1/chat/completions">
+  <label>模型</label>
+  <input type="text" id="llmModel" placeholder="deepseek-v4-flash-0731">
+  <label>API Key</label>
+  <input type="password" id="llmKey" placeholder="可空(本地/自建代理不需要)">
+</div>
+<div class="row">
+  <button class="primary" id="saveLlm">保存</button>
+  <button id="testLlm">测试连通</button>
+  <span class="msg" id="llmMsg" role="status" aria-live="polite"></span>
+</div>
+
+<div class="tip">
+  说明:
+  <ul style="list-style:none; padding:0; margin:8px 0 0">
+    <li>· 任意 <b>OpenAI 兼容</b> 端点都可用(API 地址 / 模型 / API Key 全可配)。没有 Key 的话可去 <b>api.lxseek.com</b> 购买。</li>
+    <li>· API Key <b>可空</b>:本机/自建代理不需要 key;直连外部 API 服务时才填。</li>
+    <li>· 模型名必须是对端认识的(默认 <code>qwen3.7-plus</code>,以服务方文档为准)。</li>
+    <li>· 保存 API 地址后若指向新主机,会自动弹权限确认(与域名白名单同一套机制)。</li>
+    <li>· <code>example.com</code> 会授权 <code>*.example.com</code> 全部子域;删除域名同时撤销授权。</li>
+    <li>· 录制/导出均不做任何外发;只有你点"AI 报告/AI 诊断/AI 建链"时才调用配置的 LLM。</li>
+  </ul>
+</div>
+
+<script src="../common.js"></script>
+<script src="options.js"></script>
+</body>
+</html>

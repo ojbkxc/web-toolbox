@@ -1,0 +1,8 @@
+{
+  "source": "Blazemeter/taurus tests/resources/jmeter/jmx/*.jmx",
+  "url": "https://github.com/Blazemeter/taurus/tree/master/tests/resources/jmeter/jmx",
+  "auth_form": "none (结构样本)",
+  "dynamic_values": [],
+  "entries": 23,
+  "note": "控制器结构样本: TransactionController/GenericController/OnceOnlyController 属性格式, JSONPath 提取器(referenceNames/jsonPathExprs/match_numbers), CookieManager cookies 结构。平台口径导出的权威参照。entries 按 loader 口径 = 主样本 all_controllers.jmx 的 23 个采样器(同目录其余 jmx 为结构佐证, loader 只读首个; 结构样本不做 buildJmx 导出校验)。"
+}

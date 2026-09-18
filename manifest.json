@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Web 工具箱",
+  "version": "1.0.82",
+  "description": "接口测试工具箱:免 F12 录制 API 流量,AI 报告/诊断/参数建链,自动关联动态值,导出 JMeter/Python/JSONL/HAR,就地冒烟。数据不出本机,目标域名完全可配置。",
+  "minimum_chrome_version": "116",
+  "permissions": ["cookies", "storage", "activeTab", "scripting", "debugger", "tabs", "alarms", "sidePanel"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Web 工具箱"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  },
+  "options_page": "options/options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

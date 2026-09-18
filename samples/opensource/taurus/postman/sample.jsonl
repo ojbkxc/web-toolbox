@@ -1,0 +1,3 @@
+{"method": "GET", "url": "https://postman-echo.com/get?source=newman-sample-github-collection", "post": "", "auth": "none"}
+{"method": "POST", "url": "https://postman-echo.com/post", "post": "Duis posuere augue vel cursus pharetra. In luctus a ex nec pretium...", "auth": "none"}
+{"method": "POST", "url": "https://postman-echo.com/post", "post": "{\"text\":\"Duis posuere augue vel cursus pharetra. In luctus a ex nec pretium...\"}", "auth": "none"}
