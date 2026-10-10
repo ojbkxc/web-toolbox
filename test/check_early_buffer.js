@@ -99,7 +99,7 @@ function fire(method, params) {
 
   // 冷启动窗口的域名过滤语义: 补处理走 handleRequestWillBeSent 同一函数,
   // 非授权域名的请求被丢(不是缓冲就全收) —— 静态断言分支形态。
-  const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+  const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8').replace(/\r/g, '');
   assert(bg.includes('if (domainsCache === null) { earlyBuffer.push(params); return; }'), 'e4. 冷启动缓冲分支代码在(域名过滤前置)');
   assert(bg.includes('const buf = earlyBuffer.splice(0);\n    for (const p of buf) handleRequestWillBeSent(p);'), 'e5. stateReady 补处理 splice(0) 全量取出(防半处理)');
   assert(bg.includes('function handleRequestWillBeSent(params)'), 'e6. 补处理复用 handleRequestWillBeSent(域名/状态过滤同路径)');
