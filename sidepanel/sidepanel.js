@@ -467,11 +467,11 @@ function updatePreludeUi() {
 }
 
 // CSV 数据驱动提示(v1.0.82): 依赖链变量数决定是否显示「数据驱动」行。
-// 链变量来自 aiChain(AI 建链 + corr 合成链)。无链时无数据可驱动 → 隐藏, 不空占一行。
+// 链变量来自 aiChain(AI 建链 + corr 合成链) + 轻量自动关联(v1.0.84)。无链时无数据可驱动 → 隐藏, 不空占一行。
 function updateCsvUi() {
   const el = $("csvHint");
   if (!el) return;
-  const cols = collectCsvData(exportSet(), aiChain || []);
+  const cols = collectCsvData(exportSet(), mergeChain(autoDetectChain(exportSet()), aiChain || []));
   const cnt = $("csvCount");
   if (cols.length) {
     el.style.display = "";
@@ -1401,8 +1401,10 @@ $("btnSave").onclick = async () => {
           // JMX 导出集: 依赖链(applyAiChainToJmx)应用 + CSV 数据驱动列收集。
           // collectCsvData 在 applyAiChainToJmx 之前调 —— 取的是录制值(替换前的 body);
           // 之后调会拿到 ${var} 占位符(被 collectCsvData 防御性跳过, 列静默丢)。
-          const jmxApplied = applyAiChainToJmx(applyCorr(cleanSet, corrResult), aiChain);
-          csvData = ($("optCsv") && $("optCsv").checked) ? collectCsvData(cleanSet, aiChain) : [];
+          // v1.0.84: 轻量自动关联(autoDetectChain)不依赖 AI, AI 不可用时仍能产出 JSONPostProcessor + CSV。
+          const mergedChain = mergeChain(autoDetectChain(cleanSet), aiChain);
+          const jmxApplied = applyAiChainToJmx(applyCorr(cleanSet, corrResult), mergedChain);
+          csvData = ($("optCsv") && $("optCsv").checked) ? collectCsvData(cleanSet, mergedChain) : [];
           const jmxOpts = {
             title: "web-toolbox " + new Date().toISOString().slice(0, 16).replace("T", " "),
             prelude: ($("optOnceOnly").checked || $("optAutoRelogin").checked) ? [...preludeIds] : null,

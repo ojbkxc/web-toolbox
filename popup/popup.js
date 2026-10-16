@@ -161,11 +161,13 @@ async function quickExport(fmts) {
       if (f === "jmx") {
         // 前置识别走自动结果(auth.js 规则表), 不读侧栏的手动覆盖(那属于工作台能力)
         const auto = autoDetectPrelude(cleanSet);
-        const jmxApplied = applyAiChainToJmx(applyCorr(cleanSet, corr), chain);
+        // v1.0.84: 轻量自动关联 + AI 链合并, AI 不可用时轻量检测仍能产出 JSONPostProcessor + CSV
+        const mergedChain = mergeChain(autoDetectChain(cleanSet), chain);
+        const jmxApplied = applyAiChainToJmx(applyCorr(cleanSet, corr), mergedChain);
         // CSV 数据驱动(v1.0.82): popup 一键导出同样生成 data.csv + JMX 引用 ——
         // 依赖链变量(单号/ID)压测时按行换值; 无链时为空, 不生成 CSVDataSet。
         // collectCsvData 在 applyAiChainToJmx 之前调(取录制值, 不是 ${var} 占位符)。
-        const csvData = collectCsvData(cleanSet, chain);
+        const csvData = collectCsvData(cleanSet, mergedChain);
         out.push({ name: `webtoolbox_${stamp()}.jmx`,
           data: buildJmx(jmxApplied, {
             title: "web-toolbox " + new Date().toISOString().slice(0, 16).replace("T", " "),

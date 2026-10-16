@@ -125,7 +125,7 @@ if (typeof module !== "undefined" && module.exports) {
   applyDynamicsToQuery = _corr.applyDynamicsToQuery;
   module.exports = { isSkipHeader, isSkippable, filterSkippable, decodeHarvest, normalizeEntry,
     toJsonl, stamp, harvestToExportRows, harQueryString, buildHar, applyCorr, applyAiChainToJmx,
-    dedupeKey, dedupeIdentical, collectCsvData };
+    dedupeKey, dedupeIdentical, collectCsvData, autoDetectChain, mergeChain };
 }
 
 // 读取已配置域名清单
@@ -458,4 +458,86 @@ function applyAiChainToJmx(entries, chain) {
     }
   }
   return out;
+}
+// 轻量自动关联检测(v1.0.84): 不依赖 AI, 用规则扫描接口关联 ——
+// from 响应的叶子字段值出现在 to 请求的 body/url 中 → 生成 chain(JSONPostProcessor + CSV)。
+// AI 链不可用(未配置/调用失败)时, 轻量检测仍能产出关联, 导出带 JSONPostProcessor + CSV。
+// 与 AI 链互补: mergeChain 合并, AI 优先, 轻量补充(AI 没检到的关联)。
+function autoDetectChain(entries) {
+  if (!Array.isArray(entries) || entries.length < 2) return [];
+  const chain = [];
+  const usedVars = new Set();
+  const usedTargets = new Set();
+  // 黑名单值: 太通用, 参数化无意义(成功码/布尔/纯数字/常见常量)
+  const BL = new Set(["ISC-000", "SPM-000", "ISC-999", "true", "false", "null", "success", "ok", "FAIL", "ERROR"]);
+  const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // 递归提取 JSON 叶子字段(路径 + 值), 限深 5 层防嵌套爆炸
+  const extractLeaves = (obj, prefix, depth, out) => {
+    if (depth > 5 || obj == null || typeof obj !== "object") return;
+    for (const [k, v] of Object.entries(obj)) {
+      const p = prefix ? prefix + "." + k : k;
+      if (typeof v === "string" || typeof v === "number") {
+        const sv = String(v);
+        // 值长度 >= 4, 非黑名单, 非纯数字(纯数字太容易误匹配) → 候选
+        if (sv.length >= 4 && !BL.has(sv) && !/^\d+$/.test(sv)) out.push({ path: p, value: sv });
+      } else if (typeof v === "object") {
+        extractLeaves(v, p, depth + 1, out);
+      }
+    }
+  };
+  for (let i = 0; i < entries.length; i++) {
+    const from = entries[i];
+    if (!from.response) continue;
+    let resp; try { resp = JSON.parse(from.response); } catch { continue; }
+    const leaves = [];
+    extractLeaves(resp, "", 0, leaves);
+    for (const { path, value } of leaves) {
+      const ev = esc(value);
+      for (let j = i + 1; j < entries.length; j++) {
+        const to = entries[j];
+        // JSON body: "fieldName": "value" → toParam = body.fieldName
+        if (to.body) {
+          let m; const re = new RegExp('"([^"]+)"\\s*:\\s*"' + ev + '"', "g");
+          while ((m = re.exec(to.body)) !== null) {
+            const tp = "body." + m[1];
+            const tk = j + ":" + tp;
+            if (usedTargets.has(tk)) continue;
+            usedTargets.add(tk);
+            const leaf = path.split(".").pop();
+            let vn = "V_" + leaf, n = 2;
+            while (usedVars.has(vn)) { vn = "V_" + leaf + "_" + n++; }
+            usedVars.add(vn);
+            chain.push({ from: i, fromId: from.id, fromJsonPath: path, to: j, toId: to.id, toParam: tp, var: vn });
+          }
+        }
+        // URL query: paramName=value → toParam = url.paramName
+        const ut = (to.url || "") + (to.query ? "?" + to.query : "");
+        let m; const ure = new RegExp("([?&])([^=&]+)=" + ev + "(?=&|$)", "g");
+        while ((m = ure.exec(ut)) !== null) {
+          const tp = "url." + m[2];
+          const tk = j + ":" + tp;
+          if (usedTargets.has(tk)) continue;
+          usedTargets.add(tk);
+          const leaf = path.split(".").pop();
+          let vn = "V_" + leaf, n = 2;
+          while (usedVars.has(vn)) { vn = "V_" + leaf + "_" + n++; }
+          usedVars.add(vn);
+          chain.push({ from: i, fromId: from.id, fromJsonPath: path, to: j, toId: to.id, toParam: tp, var: vn });
+        }
+      }
+    }
+  }
+  return chain;
+}
+
+// 合并轻量链和 AI 链(v1.0.84): AI 优先, 轻量补充 AI 没检到的关联。
+// 键 = fromId→toId:toParam, AI 已有的关联轻量不重复加。
+function mergeChain(autoChain, aiChain) {
+  const ai = Array.isArray(aiChain) ? aiChain : [];
+  const auto = Array.isArray(autoChain) ? autoChain : [];
+  if (!auto.length) return ai;
+  if (!ai.length) return auto;
+  const aiKeys = new Set(ai.map((c) => (c.fromId ?? c.from) + "->" + (c.toId ?? c.to) + ":" + c.toParam));
+  const autoOnly = auto.filter((c) => !aiKeys.has((c.fromId ?? c.from) + "->" + (c.toId ?? c.to) + ":" + c.toParam));
+  return [...ai, ...autoOnly];
 }
