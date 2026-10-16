@@ -46,6 +46,11 @@ const srCount = (jmx.match(/<ResultCollector[^>]*SummaryReport/g) || []).length;
 assert(srCount === 1, `Summary Report 恰好 1 个(实得 ${srCount})`);
 assert(jmx.includes('"Summary Report"') || jmx.includes(">Summary Report<"), "Summary Report 存在");
 
+// ③b View Results Tree(v1.0.85): 察看结果树, GUI 调试核心工具
+const vrtCount = (jmx.match(/<ResultCollector[^>]*ViewResultsFullVisualizer/g) || []).length;
+assert(vrtCount === 1, `View Results Tree 恰好 1 个(实得 ${vrtCount})`);
+assert(jmx.includes("察看结果树"), "View Results Tree testname=察看结果树");
+
 // ④ ResultCollector(.jtl): filename=result.jtl
 const jtlCount = (jmx.match(/<ResultCollector[^>]*SimpleDataWriter/g) || []).length;
 assert(jtlCount === 1, `ResultCollector(.jtl) 恰好 1 个(实得 ${jtlCount})`);

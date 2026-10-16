@@ -367,6 +367,26 @@ function buildJmx(entries, opts = {}) {
   body.push("</ConstantTimer>");
   body.push("<hashTree/>");
   body.push("</hashTree>"); // ThreadGroup
+  // ---- View Results Tree(v1.0.85): 察看结果树, GUI 模式调试看每个请求详情(请求/响应/断言) ----
+  // 非GUI(-n -t)下自动忽略不报错; GUI 下是定位失败采样器的核心工具。
+  body.push('<ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="察看结果树" enabled="true">');
+  body.push('<boolProp name="ResultCollector.error_logging">false</boolProp>');
+  body.push('<objProp><name>saveConfig</name><value class="SampleSaveConfiguration">');
+  body.push('<time>true</time><latency>true</latency><success>true</success>');
+  body.push('<label>true</label><code>true</code><message>true</message>');
+  body.push('<threadName>true</threadName><dataType>true</dataType>');
+  body.push('<encoding>false</encoding><assertions>true</assertions>');
+  body.push('<subresults>true</subresults><responseData>false</responseData>');
+  body.push('<samplerData>false</samplerData><xml>false</xml>');
+  body.push('<fieldNames>true</fieldNames><responseHeaders>false</responseHeaders>');
+  body.push('<requestHeaders>false</requestHeaders><responseDataOnError>true</responseDataOnError>');
+  body.push('<saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>');
+  body.push('<bytes>true</bytes><sentBytes>true</sentBytes><url>true</url>');
+  body.push('<threadCounts>true</threadCounts><idleTime>true</idleTime><connectTime>true</connectTime>');
+  body.push('</value></objProp>');
+  body.push('<stringProp name="filename"/>');
+  body.push('</ResultCollector>');
+  body.push('<hashTree/>');
   // ---- Summary Report(v1.0.83): 导出即带, 运行后直接看汇总 ----
   body.push('<ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary Report" enabled="true">');
   body.push('<boolProp name="ResultCollector.error_logging">false</boolProp>');
