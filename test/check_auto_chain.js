@@ -108,4 +108,61 @@ const deepLink = nestedChain.find((c) => c.toParam === "body.id");
 assert(!!deepLink, "嵌套 JSON 关联检测到");
 assert(deepLink && deepLink.fromJsonPath.includes("list"), "嵌套路径含 list: " + deepLink?.fromJsonPath);
 
+// --- 场景9: 大集不设硬上限 ---
+// autoDetectChain 是 O(n²), 但不截断 —— 超 200 条也正常计算(用户自行控制集大小)。
+const big = [];
+for (let i = 0; i < 300; i++) big.push(mk("b" + i, "GET", "https://host/api/b" + i, { response: '{"d":{"v":"val-xxxx"}}' }));
+const bigChain = autoDetectChain(big);
+assert(Array.isArray(bigChain), `300 条不截断, 返回数组(实得 ${typeof bigChain})`);
+
+// --- 场景10: 边界 case — 空entries / 单条目 / 非JSON response ---
+assert(autoDetectChain([]).length === 0, "空 entries 返回 []");
+assert(autoDetectChain([mk("s0", "GET", "https://host/api/x", {})]).length === 0, "单条目返回 []");
+// 非 JSON response(XML) — H6 正则提取 <tag>value</tag>
+const xmlEntries = [
+  mk("x0", "POST", "https://host/api/xml", { response: '<root><orderId>XML-ORD-12345</orderId></root>' }),
+  mk("x1", "POST", "https://host/api/use", { body: '{"orderId":"XML-ORD-12345"}' }),
+];
+const xmlChain = autoDetectChain(xmlEntries);
+assert(xmlChain.length >= 1, `XML 响应正则提取检测到关联(实得 ${xmlChain.length})`);
+
+// --- 场景11: header 关联(H5) ---
+const hdrEntries = [
+  mk("h0", "POST", "https://host/api/login", { response: '{"data":{"token":"tok-xyz-abc-001"}}' }),
+  mk("h1", "GET", "https://host/api/data", { headers: { "X-Token": "tok-xyz-abc-001" } }),
+];
+const hdrChain = autoDetectChain(hdrEntries);
+const hdrLink = hdrChain.find((c) => c.toParam === "header.X-Token");
+assert(!!hdrLink, `header 关联检测到(实得 ${hdrChain.length} 条): ` + JSON.stringify(hdrChain.map((c) => c.toParam)));
+
+// --- 场景12: mergeChain 变量名冲突重命名(H4) ---
+const conflictAuto = [
+  { from: 0, fromId: "a", fromJsonPath: "data.x", to: 1, toId: "b", toParam: "body.x", var: "V_orderNo" },
+];
+const conflictAi = [
+  { from: 0, fromId: "a", fromJsonPath: "data.y", to: 1, toId: "b", toParam: "body.y", var: "V_orderNo" },
+];
+const conflictMerged = mergeChain(conflictAuto, conflictAi);
+const autoVar = conflictMerged.find((c) => c.toParam === "body.x");
+const aiVar = conflictMerged.find((c) => c.toParam === "body.y");
+assert(aiVar && aiVar.var === "V_orderNo", "AI 链变量名保留原样");
+assert(autoVar && autoVar.var === "V_orderNo_auto", "轻量链同名变量加 _auto 后缀: " + autoVar?.var);
+
+// --- 场景13: 中文值关联 ---
+const cnEntries = [
+  mk("c0", "POST", "https://host/api/cn", { response: '{"data":{"name":"北京分公司"}}' }),
+  mk("c1", "POST", "https://host/api/use", { body: '{"branch":"北京分公司"}' }),
+];
+const cnChain = autoDetectChain(cnEntries);
+assert(cnChain.length >= 1, `中文值关联检测到(实得 ${cnChain.length}): ` + JSON.stringify(cnChain.map((c) => c.var)));
+
+// --- 场景14: 超大 response 跳过(M5) ---
+const hugeResp = '{"d":{"v":"' + "x".repeat(100001) + '"}}';
+const hugeEntries = [
+  mk("hg0", "POST", "https://host/api/huge", { response: hugeResp }),
+  mk("hg1", "POST", "https://host/api/use", { body: '{"v":"' + "x".repeat(100001) + '"}' }),
+];
+const hugeChain = autoDetectChain(hugeEntries);
+assert(hugeChain.length === 0, `超大 response(>100KB) 跳过(实得 ${hugeChain.length})`);
+
 console.log("\n=== 轻量自动关联检测 PASS ===");

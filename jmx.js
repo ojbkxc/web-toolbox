@@ -181,11 +181,14 @@ function httpSampler(e, opts) {
   parts.push('<intProp name="Assertion.test_type">8</intProp>');
   parts.push('</ResponseAssertion>');
   parts.push('<hashTree/>');
-  // JSONPathAssertion: $.resultCode == ISC-000(仅 i-Service 业务 API 的 POST 请求)
-  if (e.path && e.path.startsWith('/web/iservice-') && e.method === 'POST') {
-    parts.push('<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="resultCode=ISC-000 断言" enabled="true">');
+  // JSONPathAssertion: $.resultCode == bizSuccessCode(仅业务 API 的 POST 请求)
+  // M3(v1.0.86): 前缀/成功码参数化, 不再硬编码 /web/iservice- 和 ISC-000
+  const bizPrefix = opts.bizPathPrefix || "/web/iservice-";
+  const bizCode = opts.bizSuccessCode || "ISC-000";
+  if (e.path && e.path.startsWith(bizPrefix) && e.method === 'POST') {
+    parts.push(`<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="resultCode=${xmlEsc(bizCode)} 断言" enabled="true">`);
     parts.push('<stringProp name="JSON_PATH">$.resultCode</stringProp>');
-    parts.push('<stringProp name="EXPECTED_VALUE">ISC-000</stringProp>');
+    parts.push(`<stringProp name="EXPECTED_VALUE">${xmlEsc(bizCode)}</stringProp>`);
     parts.push('<boolProp name="JSONVALIDATION">true</boolProp>');
     parts.push('<boolProp name="EXPECT_NULL">false</boolProp>');
     parts.push('<boolProp name="INVERT">false</boolProp>');
@@ -196,6 +199,29 @@ function httpSampler(e, opts) {
 
   parts.push("</hashTree>");
   return parts.join("\n");
+}
+
+// M2(v1.0.86): saveConfig 提取为函数, 消除三段 39 行重复。
+// View Results Tree 开启 responseData/requestHeaders/responseHeaders(GUI 调试看详情);
+// Summary Report / jtl 保持精简(避免大文件)。
+function saveConfigXml(o) {
+  o = o || {};
+  return '<objProp><name>saveConfig</name><value class="SampleSaveConfiguration">' +
+    '<time>true</time><latency>true</latency><success>true</success>' +
+    '<label>true</label><code>true</code><message>true</message>' +
+    '<threadName>true</threadName><dataType>true</dataType>' +
+    '<encoding>false</encoding><assertions>true</assertions>' +
+    '<subresults>true</subresults>' +
+    `<responseData>${o.responseData ? "true" : "false"}</responseData>` +
+    '<samplerData>false</samplerData><xml>false</xml>' +
+    '<fieldNames>true</fieldNames>' +
+    `<responseHeaders>${o.responseHeaders ? "true" : "false"}</responseHeaders>` +
+    `<requestHeaders>${o.requestHeaders ? "true" : "false"}</requestHeaders>` +
+    '<responseDataOnError>true</responseDataOnError>' +
+    '<saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>' +
+    '<bytes>true</bytes><sentBytes>true</sentBytes><url>true</url>' +
+    '<threadCounts>true</threadCounts><idleTime>true</idleTime><connectTime>true</connectTime>' +
+    '</value></objProp>';
 }
 
 // entries -> 完整 .jmx 文本
@@ -311,7 +337,7 @@ function buildJmx(entries, opts = {}) {
   body.push("<hashTree/>");
   // ---- ThreadGroup ----
   body.push('<ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="web-toolbox 回放" enabled="true">');
-  body.push('<stringProp name="ThreadGroup.on_sample_error">continue</stringProp>');
+  body.push(`<stringProp name="ThreadGroup.on_sample_error">${opts.onSampleError || "continue"}</stringProp>`);
   body.push('<elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">');
   body.push('<boolProp name="LoopController.continue_forever">false</boolProp>');
   body.push(`<stringProp name="LoopController.loops">${loops}</stringProp>`);
@@ -343,9 +369,12 @@ function buildJmx(entries, opts = {}) {
     body.push("<hashTree/>");
   }
   // 域名一律 ${HOST_n} 变量引用(v1.0.79): 跨域各走各的变量, 环境切换改 UDF 值即可
+  // M3(v1.0.86): 业务路径前缀/成功码参数化, 传给 httpSampler
+  const bizPathPrefix = opts.bizPathPrefix || "/web/iservice-";
+  const bizSuccessCode = opts.bizSuccessCode || "ISC-000";
   const samplerXml = (list) => list.map((e) => {
     const eu = new URL(e.url);
-    return httpSampler(e, { domain: hostRef(e), protocol: eu.protocol.replace(":", "") });
+    return httpSampler(e, { domain: hostRef(e), protocol: eu.protocol.replace(":", ""), bizPathPrefix, bizSuccessCode });
   }).join("\n");
 
   if (preEntries.length) {
@@ -369,59 +398,24 @@ function buildJmx(entries, opts = {}) {
   body.push("</hashTree>"); // ThreadGroup
   // ---- View Results Tree(v1.0.85): 察看结果树, GUI 模式调试看每个请求详情(请求/响应/断言) ----
   // 非GUI(-n -t)下自动忽略不报错; GUI 下是定位失败采样器的核心工具。
+  // M2(v1.0.86): 开启 responseData/requestHeaders/responseHeaders — 巡检定位失败必须看响应体
   body.push('<ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="察看结果树" enabled="true">');
   body.push('<boolProp name="ResultCollector.error_logging">false</boolProp>');
-  body.push('<objProp><name>saveConfig</name><value class="SampleSaveConfiguration">');
-  body.push('<time>true</time><latency>true</latency><success>true</success>');
-  body.push('<label>true</label><code>true</code><message>true</message>');
-  body.push('<threadName>true</threadName><dataType>true</dataType>');
-  body.push('<encoding>false</encoding><assertions>true</assertions>');
-  body.push('<subresults>true</subresults><responseData>false</responseData>');
-  body.push('<samplerData>false</samplerData><xml>false</xml>');
-  body.push('<fieldNames>true</fieldNames><responseHeaders>false</responseHeaders>');
-  body.push('<requestHeaders>false</requestHeaders><responseDataOnError>true</responseDataOnError>');
-  body.push('<saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>');
-  body.push('<bytes>true</bytes><sentBytes>true</sentBytes><url>true</url>');
-  body.push('<threadCounts>true</threadCounts><idleTime>true</idleTime><connectTime>true</connectTime>');
-  body.push('</value></objProp>');
+  body.push(saveConfigXml({ responseData: true, requestHeaders: true, responseHeaders: true }));
   body.push('<stringProp name="filename"/>');
   body.push('</ResultCollector>');
   body.push('<hashTree/>');
   // ---- Summary Report(v1.0.83): 导出即带, 运行后直接看汇总 ----
   body.push('<ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary Report" enabled="true">');
   body.push('<boolProp name="ResultCollector.error_logging">false</boolProp>');
-  body.push('<objProp><name>saveConfig</name><value class="SampleSaveConfiguration">');
-  body.push('<time>true</time><latency>true</latency><success>true</success>');
-  body.push('<label>true</label><code>true</code><message>true</message>');
-  body.push('<threadName>true</threadName><dataType>true</dataType>');
-  body.push('<encoding>false</encoding><assertions>true</assertions>');
-  body.push('<subresults>true</subresults><responseData>false</responseData>');
-  body.push('<samplerData>false</samplerData><xml>false</xml>');
-  body.push('<fieldNames>true</fieldNames><responseHeaders>false</responseHeaders>');
-  body.push('<requestHeaders>false</requestHeaders><responseDataOnError>true</responseDataOnError>');
-  body.push('<saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>');
-  body.push('<bytes>true</bytes><sentBytes>true</sentBytes><url>true</url>');
-  body.push('<threadCounts>true</threadCounts><idleTime>true</idleTime><connectTime>true</connectTime>');
-  body.push('</value></objProp>');
+  body.push(saveConfigXml());
   body.push('<stringProp name="filename"/>');
   body.push('</ResultCollector>');
   body.push('<hashTree/>');
   // ---- ResultCollector(.jtl)(v1.0.83): 结果落盘, 供 Jenkins/定时任务解析预警 ----
   body.push('<ResultCollector guiclass="SimpleDataWriter" testclass="ResultCollector" testname="结果写入jtl" enabled="true">');
   body.push('<boolProp name="ResultCollector.error_logging">false</boolProp>');
-  body.push('<objProp><name>saveConfig</name><value class="SampleSaveConfiguration">');
-  body.push('<time>true</time><latency>true</latency><success>true</success>');
-  body.push('<label>true</label><code>true</code><message>true</message>');
-  body.push('<threadName>true</threadName><dataType>true</dataType>');
-  body.push('<encoding>false</encoding><assertions>true</assertions>');
-  body.push('<subresults>true</subresults><responseData>false</responseData>');
-  body.push('<samplerData>false</samplerData><xml>false</xml>');
-  body.push('<fieldNames>true</fieldNames><responseHeaders>false</responseHeaders>');
-  body.push('<requestHeaders>false</requestHeaders><responseDataOnError>true</responseDataOnError>');
-  body.push('<saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>');
-  body.push('<bytes>true</bytes><sentBytes>true</sentBytes><url>true</url>');
-  body.push('<threadCounts>true</threadCounts><idleTime>true</idleTime><connectTime>true</connectTime>');
-  body.push('</value></objProp>');
+  body.push(saveConfigXml());
   body.push('<stringProp name="filename">result.jtl</stringProp>');
   body.push('</ResultCollector>');
   body.push('<hashTree/>');

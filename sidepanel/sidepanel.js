@@ -468,10 +468,12 @@ function updatePreludeUi() {
 
 // CSV 数据驱动提示(v1.0.82): 依赖链变量数决定是否显示「数据驱动」行。
 // 链变量来自 aiChain(AI 建链 + corr 合成链) + 轻量自动关联(v1.0.84)。无链时无数据可驱动 → 隐藏, 不空占一行。
+// autoDetectChain 有 200 条上限(v1.0.86), O(n²) 最多 40000 次正则(几毫秒), 无需防抖。
 function updateCsvUi() {
   const el = $("csvHint");
   if (!el) return;
-  const cols = collectCsvData(exportSet(), mergeChain(autoDetectChain(exportSet()), aiChain || []));
+  const es = exportSet(); // 缓存: autoDetectChain 与 collectCsvData 共用, 避免两次过滤计算
+  const cols = collectCsvData(es, mergeChain(autoDetectChain(es), aiChain || []));
   const cnt = $("csvCount");
   if (cols.length) {
     el.style.display = "";
@@ -1030,7 +1032,7 @@ function renderChainPreview() {
     renderChainPreview();
   };
   updateCsvUi(); // 链增减 → 数据驱动列数随之变(csvHint 显隐/计数同步)
-  updateCsvUi(); // 链增减 → 数据驱动列数随之变(csvHint 显隐/计数同步)
+
   $("chainCopy").onclick = async () => {
     try { await navigator.clipboard.writeText(JSON.stringify(aiChain, null, 2)); setStatus("✓ 链 JSON 已复制", "ok"); }
     catch { setStatus("复制失败, 请手动框选", "err"); }

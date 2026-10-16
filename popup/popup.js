@@ -172,6 +172,7 @@ async function quickExport(fmts) {
           data: buildJmx(jmxApplied, {
             title: "web-toolbox " + new Date().toISOString().slice(0, 16).replace("T", " "),
             prelude: auto.ids.size ? [...auto.ids] : null,
+
             csvData,
             csvFileName: `data_${stamp()}.csv`,
           }), mime: "application/xml" });

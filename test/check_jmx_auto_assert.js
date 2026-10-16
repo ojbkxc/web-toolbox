@@ -50,6 +50,11 @@ assert(jmx.includes('"Summary Report"') || jmx.includes(">Summary Report<"), "Su
 const vrtCount = (jmx.match(/<ResultCollector[^>]*ViewResultsFullVisualizer/g) || []).length;
 assert(vrtCount === 1, `View Results Tree 恰好 1 个(实得 ${vrtCount})`);
 assert(jmx.includes("察看结果树"), "View Results Tree testname=察看结果树");
+// M2(v1.0.86): View Results Tree 开启 responseData/requestHeaders/responseHeaders(巡检定位失败必须看)
+const vrtBlock = jmx.slice(jmx.indexOf("ViewResultsFullVisualizer"), jmx.indexOf("ViewResultsFullVisualizer") + 800);
+assert(vrtBlock.includes("<responseData>true</responseData>"), "View Results Tree 开启 responseData(巡检看响应体)");
+assert(vrtBlock.includes("<requestHeaders>true</requestHeaders>"), "View Results Tree 开启 requestHeaders(巡检看请求头)");
+assert(vrtBlock.includes("<responseHeaders>true</responseHeaders>"), "View Results Tree 开启 responseHeaders(巡检看响应头)");
 
 // ④ ResultCollector(.jtl): filename=result.jtl
 const jtlCount = (jmx.match(/<ResultCollector[^>]*SimpleDataWriter/g) || []).length;

@@ -460,37 +460,60 @@ function applyAiChainToJmx(entries, chain) {
   return out;
 }
 // 轻量自动关联检测(v1.0.84): 不依赖 AI, 用规则扫描接口关联 ——
-// from 响应的叶子字段值出现在 to 请求的 body/url 中 → 生成 chain(JSONPostProcessor + CSV)。
+// from 响应的叶子字段值出现在 to 请求的 body/url/header 中 → 生成 chain(JSONPostProcessor + CSV)。
 // AI 链不可用(未配置/调用失败)时, 轻量检测仍能产出关联, 导出带 JSONPostProcessor + CSV。
 // 与 AI 链互补: mergeChain 合并, AI 优先, 轻量补充(AI 没检到的关联)。
 function autoDetectChain(entries) {
   if (!Array.isArray(entries) || entries.length < 2) return [];
+  // O(n²) 扫描, 不设硬上限 —— 用户自行控制集大小(过滤/勾选缩集后再关联)。
   const chain = [];
   const usedVars = new Set();
   const usedTargets = new Set();
-  // 黑名单值: 太通用, 参数化无意义(成功码/布尔/纯数字/常见常量)
-  const BL = new Set(["ISC-000", "SPM-000", "ISC-999", "true", "false", "null", "success", "ok", "FAIL", "ERROR"]);
+  // M4: 扩充黑名单 — 通用值参数化无意义(成功码/布尔/常见常量/通用角色名/MIME类型等)
+  // 全小写, 配合 sv.toLowerCase() 做大小写无关匹配
+  const BL = new Set(["isc-000","spm-000","isc-999","true","false","null","success","ok","fail","error",
+    "admin","test","user","guest","active","enabled","disabled","inactive","json","xml","post","get","put","delete",
+    "utf-8","content-type","application/json","text/plain","text/html","authorization","bearer"]);
   const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // 递归提取 JSON 叶子字段(路径 + 值), 限深 5 层防嵌套爆炸
+  // M5: 叶子总数上限, 防嵌套爆炸(深5层×宽100=10^5 无上限会灾难)
+  const MAX_LEAVES = 200;
+  // 递归提取 JSON 叶子字段(路径 + 值), 限深 5 层, 限总数 MAX_LEAVES
   const extractLeaves = (obj, prefix, depth, out) => {
-    if (depth > 5 || obj == null || typeof obj !== "object") return;
+    if (depth > 5 || obj == null || typeof obj !== "object" || out.length >= MAX_LEAVES) return;
     for (const [k, v] of Object.entries(obj)) {
+      if (out.length >= MAX_LEAVES) return;
       const p = prefix ? prefix + "." + k : k;
       if (typeof v === "string" || typeof v === "number") {
         const sv = String(v);
-        // 值长度 >= 4, 非黑名单, 非纯数字(纯数字太容易误匹配) → 候选
-        if (sv.length >= 4 && !BL.has(sv) && !/^\d+$/.test(sv)) out.push({ path: p, value: sv });
+        // M4: 值长度阈值 — ASCII 值 >= 6(减少误匹配), 含中文/Unicode 值 >= 4(信息密度高)
+        const minLen = /[^\x00-\x7f]/.test(sv) ? 4 : 6;
+        if (sv.length >= minLen && !BL.has(sv.toLowerCase()) && !/^\d+$/.test(sv)) out.push({ path: p, value: sv });
       } else if (typeof v === "object") {
         extractLeaves(v, p, depth + 1, out);
       }
     }
   };
+  // H6: 非JSON响应(XML/HTML)用正则提取 <tag>value</tag> 形态的叶子
+  const extractFromText = (text, out) => {
+    if (!text || typeof text !== "string") return;
+    let m; const re = /<(\w+)>([^<]{6,100})<\/\1>/g;
+    while ((m = re.exec(text)) !== null && out.length < MAX_LEAVES) {
+      if (!BL.has(m[2].toLowerCase()) && !/^\d+$/.test(m[2])) out.push({ path: m[1], value: m[2] });
+    }
+  };
   for (let i = 0; i < entries.length; i++) {
     const from = entries[i];
     if (!from.response) continue;
-    let resp; try { resp = JSON.parse(from.response); } catch { continue; }
+    // M5: 超大 response 跳过(>100KB), 200KB 的 JSON parse + 递归开销显著
+    const rt = from.response;
+    if (rt.length > 100000) continue;
     const leaves = [];
-    extractLeaves(resp, "", 0, leaves);
+    let resp; try { resp = JSON.parse(rt); } catch {
+      // H6: 非 JSON 响应用正则提取
+      extractFromText(rt, leaves);
+      if (!leaves.length) continue;
+    }
+    if (resp && typeof resp === "object") extractLeaves(resp, "", 0, leaves);
     for (const { path, value } of leaves) {
       const ev = esc(value);
       for (let j = i + 1; j < entries.length; j++) {
@@ -524,6 +547,22 @@ function autoDetectChain(entries) {
           usedVars.add(vn);
           chain.push({ from: i, fromId: from.id, fromJsonPath: path, to: j, toId: to.id, toParam: tp, var: vn });
         }
+        // H5: header 关联: headerName: value → toParam = header.headerName
+        if (to.headers) {
+          for (const [hk, hv] of Object.entries(to.headers)) {
+            if (String(hv) === value) {
+              const tp = "header." + hk;
+              const tk = j + ":" + tp;
+              if (usedTargets.has(tk)) continue;
+              usedTargets.add(tk);
+              const leaf = path.split(".").pop();
+              let vn = "V_" + leaf, n = 2;
+              while (usedVars.has(vn)) { vn = "V_" + leaf + "_" + n++; }
+              usedVars.add(vn);
+              chain.push({ from: i, fromId: from.id, fromJsonPath: path, to: j, toId: to.id, toParam: tp, var: vn });
+            }
+          }
+        }
       }
     }
   }
@@ -532,12 +571,15 @@ function autoDetectChain(entries) {
 
 // 合并轻量链和 AI 链(v1.0.84): AI 优先, 轻量补充 AI 没检到的关联。
 // 键 = fromId→toId:toParam, AI 已有的关联轻量不重复加。
+// H4(v1.0.86): 轻量链中与 AI 链同名的变量加 _auto 后缀, 防 JMeter 后挂覆盖先挂。
 function mergeChain(autoChain, aiChain) {
   const ai = Array.isArray(aiChain) ? aiChain : [];
   const auto = Array.isArray(autoChain) ? autoChain : [];
   if (!auto.length) return ai;
   if (!ai.length) return auto;
   const aiKeys = new Set(ai.map((c) => (c.fromId ?? c.from) + "->" + (c.toId ?? c.to) + ":" + c.toParam));
+  const aiVars = new Set(ai.map((c) => c.var));
   const autoOnly = auto.filter((c) => !aiKeys.has((c.fromId ?? c.from) + "->" + (c.toId ?? c.to) + ":" + c.toParam));
-  return [...ai, ...autoOnly];
+  const renamed = autoOnly.map((c) => aiVars.has(c.var) ? { ...c, var: c.var + "_auto" } : c);
+  return [...ai, ...renamed];
 }
