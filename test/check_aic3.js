@@ -14,10 +14,13 @@ const vm = require("vm");
 const path = require("path");
 const P = require(ROOT + "/pyscript.js");
 
-const aicSrc = fs.readFileSync(path.join(process.env.TEMP, "aic.js"), "utf8");
+// applyAiChain 单源化(v1.0.89): 真身在根目录 aic.js(sidepanel.html <script> 同页加载),
+// 不再用 $TEMP 手工镜像 —— 镜像无生成方, 漂移即测旧实现(原场景 10 的痛点, 单源后根除)。
+const aicSrc = fs.readFileSync(ROOT + "/aic.js", "utf8");
 const ctx = { console };
 vm.createContext(ctx);
-vm.runInContext(`this.applyAiChain = ${aicSrc};`, ctx);
+vm.runInContext(aicSrc, ctx);
+vm.runInContext(`this.applyAiChain = applyAiChain;`, ctx);
 if (typeof ctx.applyAiChain !== "function") { console.error("aic.js 加载失败"); process.exit(2); }
 
 // common.js 的 applyAiChainToJmx(浏览器全局函数, 直接 new Script 加载进 realm)
@@ -200,21 +203,18 @@ const ok = (name, cond, got) => {
   ok("missing 串过 escHtml", block.includes("rep.missing.map((s) => `  ⚠ ${escHtml(s)}`)"), block.slice(0, 200));
 }
 
-// ---- 10. aic.js 镜像与 sidepanel 源码对拍(v1.0.64, #157 方向①): aic.js 是
-//    applyAiChain 的手工镜像(无生成方), 本文件与 check_seq_link 都拿它注入 vm ——
-//    sidepanel 里该函数演进后镜像若不跟, 测试就测了旧实现: 断言全绿但真源码行为
-//    已漂移(镜像安全≠源码安全)。对拍断言让漂移即红。
+// ---- 10. applyAiChain 单源防回潮(v1.0.89, 原镜像对拍演进): 函数真身已抽至根目录
+//    aic.js(sidepanel.html <script> 同页加载, 本文件与 check_seq_link require 同一文件)。
+//    历史: 原先是 $TEMP/aic.js 手工镜像对拍 —— 镜像无生成方, 丢失/漂移即测旧实现,
+//    2026-10-16 TEMP 副本丢失致测试连红, 单源化根除。断言: ① sidepanel 不再内联定义
+//    (防双源回潮) ② html 引用 aic.js ③ aic.js 可 require(真源可消费)。
 {
   const spSrc = fs.readFileSync(ROOT + "/sidepanel/sidepanel.js", "utf8");
-  const at = spSrc.indexOf("function applyAiChain");
-  const endMark = "report: () => ({ applied, missing }) };";
-  const endIdx = spSrc.indexOf(endMark, at);
-  ok("sidepanel applyAiChain 区段存在", at >= 0 && endIdx > at, `at=${at} end=${endIdx}`);
-  if (at >= 0 && endIdx > at) {
-    const seg = (spSrc.slice(at, endIdx + endMark.length) + "\n}").replace(/\r/g, "").trim();
-    const mirror = aicSrc.replace(/\r/g, "").trim();
-    ok("aic.js 镜像与 sidepanel 源码一字不差", seg === mirror, `镜像 ${mirror.length} vs 源码 ${seg.length}`);
-  }
+  ok("sidepanel 不再内联 applyAiChain 定义(单源, 防双源回潮)", !/function applyAiChain/.test(spSrc), spSrc.match(/function applyAiChain/)?.[0]);
+  const html = fs.readFileSync(ROOT + "/sidepanel/sidepanel.html", "utf8");
+  ok("sidepanel.html 引用 aic.js", /<script src="\.\.\/aic\.js">/.test(html), html.match(/aic\.js/)?.[0]);
+  const aicReal = require(ROOT + "/aic.js");
+  ok("aic.js 真 require 可用(测试/页面同一文件)", typeof aicReal.applyAiChain === "function", typeof aicReal.applyAiChain);
 }
 
 // ---- 11. JSON body 注入的反斜杠转义(v1.0.64, #157 方向①真 bug 修复): safeVal 只转义

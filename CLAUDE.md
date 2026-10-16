@@ -8,18 +8,18 @@ Chrome 扩展且数据不出本机。目标域名完全可配置——默认对�
 
 - **远端**：https://github.com/ojbkxc/web-toolbox（main 直接 push，无 PR 流程）
 - **安装**：`chrome://extensions` 开发者模式加载本目录，源码即产物（没有 build 步骤）
-- **版本**：`manifest.json` 的 `"version"`（当前 1.0.82）
+- **版本**：`manifest.json` 的 `"version"`（当前 1.0.89，功能性改动第三位递增）
 
 ## 核心验证方式：node 走查回归（不是 GitHub Actions）
 
 本仓库没有 CI workflow，回归门禁是本地零依赖测试：
 
 ```bash
-node test/run_all.js      # 全量 34 项，全绿退出码 0
+node test/run_all.js      # 全量 36 项，全绿退出码 0
 node test/check_xxx.js    # 单跑某个
 ```
 
-- **完成态定义 = 34/34 PASS**。每次改动收尾必须跑全量；失败修根因，禁止跳过/放宽断言。
+- **完成态定义 = 36/36 PASS**。每次改动收尾必须跑全量；失败修根因，禁止跳过/放宽断言。
 - 新增行为必须配套 `test/check_*.js` 走查（vm realm 端到端风格，见 `test/README.md`）。
 - 通用化规则（如清洗判定、关联算法）**必须用 `samples/opensource/` 真实开源样本验证**，
   不许只拿 `samples/known/` 的 KTKI 自造样本自证。
@@ -34,9 +34,9 @@ node test/check_xxx.js    # 单跑某个
 | `options/` | 域名授权配置 + AI 端点配置（地址/模型/Key 三项可配） |
 | `common.js` | 各页面与 worker 共享的工具函数 |
 | `jmx.js` `pyscript.js` | JMeter / Python 脚本导出器 |
-| `replay.js` `correlate.js` | 链路重放（回归 diff）/ 自动关联（动态值参数化） |
+| `replay.js` `correlate.js` `aic.js` | 链路重放（回归 diff）/ 自动关联 / AI 链注入（applyAiChain 单源） |
 | `aireport.js` `skill.js` `auth.js` | AI 报告/技能选择器 / 登录前置识别 |
-| `test/` | 34 项走查回归（零依赖，只需 node） |
+| `test/` | 36 项走查回归（零依赖，只需 node） |
 | `samples/` | 样本库：known(自造) + opensource(真实开源样本) |
 
 ## 开发规范
@@ -56,7 +56,7 @@ node test/check_xxx.js    # 单跑某个
 ## 常见问题
 
 ### Q: 为什么没有 GitHub Actions CI？
-A: 纯 JS 零依赖扩展，node 走查在本机 30 秒跑完 34 项，本地 `test/run_all.js` 就是 CI。
+A: 纯 JS 零依赖扩展，node 走查在本机 30 秒跑完 36 项，本地 `test/run_all.js` 就是 CI。
 
 ### Q: 怎么手动冒烟？
 A: `chrome://extensions` 重新加载扩展 → 配置一个域名 → 录制 → 侧栏过滤/导出，走一遍核心链路。

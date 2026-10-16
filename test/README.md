@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 34 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 36 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 

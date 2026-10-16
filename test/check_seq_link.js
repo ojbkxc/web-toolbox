@@ -18,9 +18,10 @@ vm.createContext(ctx);
 for (const f of ["correlate.js", "common.js", "jmx.js", "pyscript.js"]) {
   new vm.Script(fs.readFileSync(path.join(ROOT, f), "utf8"), { filename: f }).runInContext(ctx);
 }
-// applyAiChain 从 sidepanel.js 提取的副本
-const aicSrc = fs.readFileSync(path.join(process.env.TEMP, "aic.js"), "utf8");
-vm.runInContext(`this.applyAiChain = ${aicSrc};`, ctx);
+// applyAiChain 单源化(v1.0.89): 直接加载根目录 aic.js(真源), 不再用 $TEMP 手工镜像
+const aicSrc = fs.readFileSync(ROOT + "/aic.js", "utf8");
+vm.runInContext(aicSrc, ctx);
+vm.runInContext(`this.applyAiChain = applyAiChain;`, ctx);
 
 let fails = 0;
 const ok = (name, cond, got) => {
