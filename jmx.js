@@ -172,6 +172,28 @@ function httpSampler(e, opts) {
     parts.push("</JSONPostProcessor><hashTree/>");
   }
 
+  // 自动断言(v1.0.83): 导出即带, 开箱可巡检
+  // ResponseAssertion: HTTP 200(所有请求)
+  parts.push('<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="HTTP 200 断言" enabled="true">');
+  parts.push('<collectionProp name="Asserion.test_strings"><stringProp name="0">200</stringProp></collectionProp>');
+  parts.push('<stringProp name="Assertion.test_field">Assertion.response_code</stringProp>');
+  parts.push('<boolProp name="Assertion.assume_success">false</boolProp>');
+  parts.push('<intProp name="Assertion.test_type">8</intProp>');
+  parts.push('</ResponseAssertion>');
+  parts.push('<hashTree/>');
+  // JSONPathAssertion: $.resultCode == ISC-000(仅 i-Service 业务 API 的 POST 请求)
+  if (e.path && e.path.startsWith('/web/iservice-') && e.method === 'POST') {
+    parts.push('<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="resultCode=ISC-000 断言" enabled="true">');
+    parts.push('<stringProp name="JSON_PATH">$.resultCode</stringProp>');
+    parts.push('<stringProp name="EXPECTED_VALUE">ISC-000</stringProp>');
+    parts.push('<boolProp name="JSONVALIDATION">true</boolProp>');
+    parts.push('<boolProp name="EXPECT_NULL">false</boolProp>');
+    parts.push('<boolProp name="INVERT">false</boolProp>');
+    parts.push('<boolProp name="ISREGEX">true</boolProp>');
+    parts.push('</JSONPathAssertion>');
+    parts.push('<hashTree/>');
+  }
+
   parts.push("</hashTree>");
   return parts.join("\n");
 }
@@ -345,6 +367,44 @@ function buildJmx(entries, opts = {}) {
   body.push("</ConstantTimer>");
   body.push("<hashTree/>");
   body.push("</hashTree>"); // ThreadGroup
+  // ---- Summary Report(v1.0.83): 导出即带, 运行后直接看汇总 ----
+  body.push('<ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary Report" enabled="true">');
+  body.push('<boolProp name="ResultCollector.error_logging">false</boolProp>');
+  body.push('<objProp><name>saveConfig</name><value class="SampleSaveConfiguration">');
+  body.push('<time>true</time><latency>true</latency><success>true</success>');
+  body.push('<label>true</label><code>true</code><message>true</message>');
+  body.push('<threadName>true</threadName><dataType>true</dataType>');
+  body.push('<encoding>false</encoding><assertions>true</assertions>');
+  body.push('<subresults>true</subresults><responseData>false</responseData>');
+  body.push('<samplerData>false</samplerData><xml>false</xml>');
+  body.push('<fieldNames>true</fieldNames><responseHeaders>false</responseHeaders>');
+  body.push('<requestHeaders>false</requestHeaders><responseDataOnError>true</responseDataOnError>');
+  body.push('<saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>');
+  body.push('<bytes>true</bytes><sentBytes>true</sentBytes><url>true</url>');
+  body.push('<threadCounts>true</threadCounts><idleTime>true</idleTime><connectTime>true</connectTime>');
+  body.push('</value></objProp>');
+  body.push('<stringProp name="filename"/>');
+  body.push('</ResultCollector>');
+  body.push('<hashTree/>');
+  // ---- ResultCollector(.jtl)(v1.0.83): 结果落盘, 供 Jenkins/定时任务解析预警 ----
+  body.push('<ResultCollector guiclass="SimpleDataWriter" testclass="ResultCollector" testname="结果写入jtl" enabled="true">');
+  body.push('<boolProp name="ResultCollector.error_logging">false</boolProp>');
+  body.push('<objProp><name>saveConfig</name><value class="SampleSaveConfiguration">');
+  body.push('<time>true</time><latency>true</latency><success>true</success>');
+  body.push('<label>true</label><code>true</code><message>true</message>');
+  body.push('<threadName>true</threadName><dataType>true</dataType>');
+  body.push('<encoding>false</encoding><assertions>true</assertions>');
+  body.push('<subresults>true</subresults><responseData>false</responseData>');
+  body.push('<samplerData>false</samplerData><xml>false</xml>');
+  body.push('<fieldNames>true</fieldNames><responseHeaders>false</responseHeaders>');
+  body.push('<requestHeaders>false</requestHeaders><responseDataOnError>true</responseDataOnError>');
+  body.push('<saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>');
+  body.push('<bytes>true</bytes><sentBytes>true</sentBytes><url>true</url>');
+  body.push('<threadCounts>true</threadCounts><idleTime>true</idleTime><connectTime>true</connectTime>');
+  body.push('</value></objProp>');
+  body.push('<stringProp name="filename">result.jtl</stringProp>');
+  body.push('</ResultCollector>');
+  body.push('<hashTree/>');
   body.push("</hashTree>"); // TestPlan
   body.push("</hashTree>"); // root
   body.push("</jmeterTestPlan>");

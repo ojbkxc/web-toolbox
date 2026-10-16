@@ -245,6 +245,27 @@ const ids = () => (harvest()?.entries || []).map((e) => e.id);
     await msg("stopRecording");
   }
 
+  // 7e) clearHarvest 与在途 flushEntries 竞态(v1.0.83): 已 loadingFinished 进 pushEntry 攒批
+  //     的条目, clearHarvest 后不复活。此前 set(空信封) 不在 harvestQueue 链且无序号守卫,
+  //     flush 在清空后执行: get 拿空信封 → push 旧条目 → set 写回 → 列表清不掉(用户实锤)。
+  //     与 7d 区别: 7d 测的是"在途请求"(只 requestWillBeSent, pending Map), 本场景测的是
+  //     "已完成进攒批"(loadingFinished → pushEntry, pendingEntries/harvestQueue 链) ——
+  //     后者是 7d 未覆盖的竞态窗口, 也是用户"点了感觉没清空"的根因。
+  {
+    await msg("startRecording", { tabId: 123 });
+    // 请求完成 → loadingFinished 的 async IIFE → pushEntry 进攒批(微任务, 未 flush)
+    fire("Network.requestWillBeSent", { requestId: "clr-stale", timestamp: 200, request: { url: "https://app.test.com/clr-stale", method: "GET", headers: {} } });
+    fire("Network.responseReceived", { requestId: "clr-stale", response: { status: 200, mimeType: "application/json" } });
+    fire("Network.loadingFinished", { requestId: "clr-stale", timestamp: 200.1 });
+    // 立即清空(不等 flush) —— 竞态窗口: 修复前 flush 在清空后写回 clr-stale → 复活
+    const rc = await msg("clearHarvest");
+    ok(rc && rc.ok === true, "clearHarvest 回 {ok:true}");
+    await sleep(80);
+    ok(!(harvest().entries || []).some((e) => e.path === "/clr-stale"), "clearHarvest 后已 pushEntry 的攒批条目不复活(竞态修复, v1.0.83)");
+    ok(harvest() && harvest().v === 1 && (harvest().entries || []).length === 0, "clearHarvest 后库为空信封(非残留旧条目)");
+    await msg("stopRecording");
+  }
+
   // 8) 合帧批语义(v1.0.55): 同一 tick 批内 FIFO 保序 + 异步边界封批一次写 + 攒批不可被换会话作废
   //    pushEntry 攒批承诺从未被行为级测过(此前全靠最终态断言):
   //    a) 同 tick 连续 loadingFinished 多条 → 一批一次 storage.set(写放大合帧的价值所在)

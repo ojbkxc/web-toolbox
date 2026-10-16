@@ -257,6 +257,9 @@ function dispatchNetworkEvent(src, method, params) {
     const item = pending.get(params.requestId);
     if (!item) return;
     pending.delete(params.requestId);
+    // 入列时序快照(v1.0.83 竞态修复): pushEntry 在下方 async IIFE 微任务里调, 可能晚于
+    // clearHarvest; 在此同步点记 seq 才能区分"清空前的旧条目"(跳过 set)与"清空后的新条目"(正常写)。
+    item.__clearSeq = harvestClearSeq;
     // 耗时: CDP MonotonicTime 差(单调时钟, 不受系统时钟调整影响)。
     // ⚠ 单位是【秒】(小数), 不是毫秒 —— DevTools 前端同源(har 导出也是 *1000)。
     // 字段缺失(旧 Chrome/mock)时保持 0, 列表/详情对 0 不展示。
@@ -351,9 +354,22 @@ function trimToFit(arr, budgetBytes) {
 // 批间由串行队列衔接, 不丢不重。
 let pendingEntries = null;   // 当前未 flush 的攒批
 let harvestQueue = Promise.resolve();
+// 清空序号(v1.0.83 竞态修复): clearHarvest 递增, flushEntries 在入列时记录快照、set
+// 前比对 —— 不等则本批是清空前的旧条目, 跳过 set 防复活(详见 clearHarvest 注释)。
+let harvestClearSeq = 0;
 
 function flushEntries(items) {
+  // 入列时序快照(每个 item 在 loadingFinished 同步点记的 __clearSeq): clearHarvest 递增后,
+  // 旧 seq 的批 set 前自废(否则清空后 flush 写回复活, 列表清不掉)。pushEntry 在
+  // loadingFinished 的 async IIFE 微任务里调, 可能晚于 clearHarvest —— 在 flushEntries
+  // 调用时记会拿到清空后的新 seq(失效), 必须在 loadingFinished 同步点记到 item 上。
+  const myClearSeq = items.length && items[0].__clearSeq != null ? items[0].__clearSeq : harvestClearSeq;
+  for (const it of items) delete it.__clearSeq; // 内部字段不外泄(导出/normalizeEntry 不应见)
   harvestQueue = harvestQueue.then(async () => {
+    // 竞态修复(v1.0.83): clearHarvest 在本批入列(myClearSeq)之后递增了序号 → 本批是清空前
+    // 的旧条目。必须在 get/push 之前 return —— arr = decoded 是 mem 内部数组引用, push
+    // 会直接污染 mem(即使后面 set 被 skip, mem 已被改, 列表复活)。回调开头检查最稳。
+    if (harvestClearSeq !== myClearSeq) return;
     const r = await chrome.storage.local.get([KEY_HARVEST]);
     const decoded = decodeHarvest(r[KEY_HARVEST]);
     // 损坏数据: 不静默覆盖 —— 把旧值备份到独立 key 再重建, 用户可救回
@@ -384,6 +400,7 @@ function flushEntries(items) {
     }
     const dropped = arr.length - trimmed.length;
     if (dropped > 0) diag("warn", "harvest", `超存储配额预算, 丢弃最旧 ${dropped} 条(保留最新 ${trimmed.length} 条)`);
+
     try {
       await chrome.storage.local.set({ [KEY_HARVEST]: encodeHarvest(trimmed) });
     } catch (e) {
@@ -516,11 +533,26 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg && msg.type === "clearHarvest") {
     // 数据清空时派生结果一并失效(corrResult/aiChain/aiAsserts 都锚定旧条目下标或 id,
-    // 残留会被新数据错位应用 —— aiChain 的 from/to 是下标, 清空后必错)。
+    // 招留会被新数据错位应用 —— aiChain 的 from/to 是下标, 清空后必错)。
     // pickIds(v1.0.78 补): #173 起勾选集持久化, 锚定条目 id —— 清单不跟上则 storage
-    // 残留死勾选(发起面板的 persistPickIds 写回只兜自己, 其他面板/重开前它一直躺着)。
-    chrome.storage.local.set({ [KEY_HARVEST]: encodeHarvest([]) }, () => {
-      chrome.storage.local.remove(["toolbox.corrResult", "toolbox.aiChain", "toolbox.aiAsserts", "toolbox.manualPrelude", "toolbox.pickIds"], () => sendResponse({ ok: true }));
+    // 招留死勾选(发起面板的 persistPickIds 写回只兜自己, 其他面板/重开前它一直躺着)。
+    // 竞态修复(v1.0.83): 此前 set(空信封) 不在 harvestQueue 链, 已 pushEntry 但未 flush
+    // 的攒批(同 tick 完成的一批请求)其 flushEntries 会在清空之后执行: get 拿空信封 → push
+    // 旧条目 → set 写回 → 旧条目复活, 用户"丢弃/重录"后列表仍在。修复三件套:
+    //   ① harvestClearSeq++ —— flushEntries 入列时记的旧序号与本序不等, set 前自废(核心);
+    //   ② pending.clear()/pendingEntries=null —— 作废在途请求与攒批, 死条目不残留;
+    //   ③ set(空信封) 排进 harvestQueue 链尾 —— 与在途 flush 串行不互扰, 最终态必为空。
+    harvestClearSeq++;
+    pending.clear();
+    pendingEntries = null;
+    harvestQueue = harvestQueue.then(async () => {
+      try {
+        await chrome.storage.local.set({ [KEY_HARVEST]: encodeHarvest([]) });
+        await chrome.storage.local.remove(["toolbox.corrResult", "toolbox.aiChain", "toolbox.aiAsserts", "toolbox.manualPrelude", "toolbox.pickIds"]);
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e) });
+      }
     });
     return true;
   }
