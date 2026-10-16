@@ -1,5 +1,7 @@
 # web-toolbox — Web 工具箱 (Chrome MV3 扩展)
 
+> 仓库: https://github.com/ojbkxc/web-toolbox (main 分支)
+
 内网自动化的辅助工具箱,零业务逻辑、只产出数据(供 Python 工具链消费)。**目标域名完全可配置**——扩展默认不请求任何域名权限,你在配置页添加哪个域名,它才对哪个域名工作。
 
 **录制 → AI 分析 → 自动关联 → 导出 JMeter/Python → 就地冒烟** 全链路,可替代 BlazeMeter Chrome 扩展且数据不出本机。**全程无需打开 F12。**
