@@ -8,6 +8,7 @@ let recState = "idle";
 let entryCount = 0;
 let siteReady = true; // 当前 tab 域名已配置(默认 true: refresh 判定前不藏按钮, 防闪)
 let currentHost = null; // 当前 tab 的 hostname(refresh 判定用, onAddSite 申请与判定同源)
+let cachedDomains = []; // refresh 拉的域名清单快照(onAddSite 同步读, 不 await 保手势)
 
 // 域名覆盖判定: 与 background.js 引擎 matchDomain 同语义(host === d || host.endsWith("." + d))
 // —— popup realm 加载不到 background.js, 这里同款实现; 引擎认 "midea.com 覆盖 icsuat.midea.com",
@@ -65,12 +66,14 @@ async function refresh() {
   let st = "idle";
   let count = 0;
   let corrupt = false;
+  let unmatched = [];
   try {
     const info = await chrome.runtime.sendMessage({ type: "getRecInfo" });
     if (info) {
       st = (info.recState === "recording" || info.recState === "paused") ? info.recState : "idle";
       count = info.count || 0;
       corrupt = !!info.harvestCorrupt;
+      unmatched = info.unmatched || [];
     }
   } catch {
     const r = await chrome.storage.local.get(["toolbox.recording"]);
@@ -89,6 +92,13 @@ async function refresh() {
     $("expCount").textContent = "⚠ 录制数据损坏, 已隔离(开侧栏看详情)";
     $("expCount").style.color = "#b06000";
   }
+  // 部分漏录提示(与侧栏同语义): 录到了一些但有请求被域名过滤 → popup 也提示
+  const uh = $("unmatchedHint");
+  if (uh) {
+    const showUh = count > 0 && unmatched.length > 0;
+    uh.style.display = showUh ? "" : "none";
+    if (showUh) uh.textContent = `⚠ ${unmatched.length} 个域被过滤: ${unmatched.join(", ")}。去 ⚙ 配置`;
+  }
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const site = $("site");
@@ -100,6 +110,7 @@ async function refresh() {
     // 双面判定: 清单覆盖(引擎 matchDomain 同语义) + 授权真实在(containsOrigin)。
     // 只查清单不查授权会出现"清单有但授权被用户在 chrome://settings 撤了"的假就绪。
     const domains = await getDomains();
+    cachedDomains = domains; // onAddSite 同步读快照(不 await getDomains, 保手势)
     const covered = hostCoveredBy(host, domains);
     const origins = domainToOrigins(host);
     const grantedOk = origins.length ? await Promise.all(origins.map(containsOrigin)) : [false];
@@ -121,16 +132,25 @@ async function refresh() {
 // 一键添加当前域名: permissions.request 必须手势内同步发起(前面垫任何 await 手势
 // 即失效, 弹窗不弹 granted 静默 false —— v1.0.9 实锤教训, 与 options addDomain 同款)。
 // host 走 refresh 存下的 currentHost(判定用的就是它, 申请与判定同源)。
+// v1.0.90: 先同步入清单再申请权限。MV3 popup 在权限弹窗弹出时会被 Chrome 关闭,
+// request 回调可能不执行 —— 先存保证清单一定更新(storage 写入不依赖 popup 存活);
+// 权限拒绝时回滚(回调若能执行的话)。cachedDomains 是 refresh 快照, 同步读不等待。
 function onAddSite() {
   const host = currentHost;
   if (!host) return;
+  const list = cachedDomains.slice();
+  let added = false;
+  if (!hostCoveredBy(host, list)) {
+    setDomains([...list, host]); // 同步触发不等待, storage 写入不依赖 popup 存活
+    cachedDomains = [...list, host]; // 同步更新缓存, 供后续 refresh 对齐
+    added = true;
+  }
   chrome.permissions.request({ origins: domainToOrigins(host) }, (granted) => {
-    if (!granted) return;
-    (async () => {
-      const list = await getDomains();
-      if (!hostCoveredBy(host, list)) await setDomains([...list, host]);
+    if (!granted && added) {
+      getDomains().then((cur) => setDomains(cur.filter((d) => d !== host))); // 回滚
+    } else {
       refreshSafe();
-    })();
+    }
   });
 }
 
@@ -172,7 +192,8 @@ async function quickExport(fmts) {
           data: buildJmx(jmxApplied, {
             title: "web-toolbox " + new Date().toISOString().slice(0, 16).replace("T", " "),
             prelude: auto.ids.size ? [...auto.ids] : null,
-
+            // 登录全局一次(v1.0.91): setUp 线程组 + 共享 Cookie, 与侧栏默认一致(巡检口径)
+            loginMode: "setup",
             csvData,
             csvFileName: `data_${stamp()}.csv`,
           }), mime: "application/xml" });

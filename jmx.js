@@ -107,6 +107,59 @@ function reloginBlock(preludeSamplers, businessSamplers, sessionMarkers) {
     (biz ? bizGate(biz) : ""); // 业务链为空(全部条目都是前置)时不挂空 IfController
 }
 
+// ---- setUp 线程组登录模式(v1.0.91, loginMode="setup", 对标 KTKI创建销售订单-UAT.jmx 权威结构) ----
+// 与 OnceOnlyController(每线程一次, 10 线程=10 个独立会话)不同: setUp 线程组单线程跑一遍,
+// 整个测试计划只登录 1 次, 主线程组线程数再多也共享同一会话 —— 巡检/单账号并发口径。
+// 跨线程组登录态共享三件套(JMeter 线程变量与 CookieManager 都是线程隔离的, 不共享):
+//   ① setUp 链尾 JSR223 把 CookieManager 的 cookie 拼串存 props.shared_cookie(全局属性)
+//   ② 主线程组头部 HeaderManager 统一注入 Cookie: ${__P(shared_cookie)}
+//   ③ 链变量桥: setUp 提取的 V_xxx 逐个 props.put; UDF 层 V_xxx=${__P(V_xxx,录制值)} 让
+//      主线程组线程启动时经 __P 读到 props 值(未提取到时落录制默认值)。与 KTKI 的 CSV 传参
+//      等价但免 CSV 文件; 勾了数据驱动时 CSV 行值仍优先(CSVDataSet 每迭代覆盖线程变量)。
+// BeanShell 而非 groovy: 本机 Java 25 下 groovy 不兼容(实测), KTKI 用 beanshell 跑通。
+function setupThreadGroup() {
+  return '<SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="登录（全局一次）" enabled="true">' +
+    '<stringProp name="ThreadGroup.on_sample_error">continue</stringProp>' +
+    '<stringProp name="ThreadGroup.num_threads">1</stringProp>' +
+    '<stringProp name="ThreadGroup.ramp_time">1</stringProp>' +
+    '<stringProp name="ThreadGroup.same_user_on_next_iteration">true</stringProp>' +
+    '<elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">' +
+    '<boolProp name="LoopController.continue_forever">false</boolProp>' +
+    '<stringProp name="LoopController.loops">1</stringProp>' +
+    "</elementProp></SetupThreadGroup>";
+}
+
+// setUp 链尾共享 JSR223: cookie 拼串 + 链变量 dump 到全局属性(挂最后一个前置采样器的 hashTree 内)
+function jsr223ShareState(varNames) {
+  const dump = varNames.map((v) =>
+    `String v = vars.get(${JSON.stringify(v)});\nif (v != null) props.put(${JSON.stringify(v)}, v);`).join("\n");
+  const script =
+    "import org.apache.jmeter.protocol.http.control.CookieManager;\n" +
+    "CookieManager cm = sampler.getCookieManager();\n" +
+    "if (cm != null) {\n" +
+    "  StringBuffer sb = new StringBuffer();\n" +
+    "  for (int i = 0; i < cm.getCookieCount(); i++) {\n" +
+    "    org.apache.jmeter.protocol.http.control.Cookie c = cm.get(i);\n" +
+    "    sb.append(c.getName()).append(\"=\").append(c.getValue()).append(\"; \");\n" +
+    "  }\n" +
+    "  props.put(\"shared_cookie\", sb.toString());\n" +
+    "}\n" + dump;
+  return '<JSR223PostProcessor guiclass="TestBeanGui" testclass="JSR223PostProcessor" testname="共享登录态到全局属性" enabled="true">' +
+    '<stringProp name="cacheKey">true</stringProp>' +
+    `<stringProp name="script">${xmlEsc(script)}</stringProp>` +
+    '<stringProp name="scriptLanguage">beanshell</stringProp>' +
+    "</JSR223PostProcessor><hashTree/>";
+}
+
+// 主线程组头部 Cookie 注入: 所有业务采样器统一带 setUp 会话的 Cookie 头
+function sharedCookieHeader() {
+  return '<HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="共享Session-Cookie" enabled="true">' +
+    '<collectionProp name="HeaderManager.headers"><elementProp name="" elementType="Header">' +
+    '<stringProp name="Header.name">Cookie</stringProp>' +
+    '<stringProp name="Header.value">${__P(shared_cookie)}</stringProp>' +
+    "</elementProp></collectionProp></HeaderManager><hashTree/>";
+}
+
 // 采样器命名: path 最后一段, 重名加序号
 function samplerName(e, used) {
   let base = e.path.split("/").filter(Boolean).pop() || e.path || "req";
@@ -245,7 +298,10 @@ function saveConfigXml(o) {
 //                 签名(JMeter 跨环境切域名的标准姿势), 暂无 UI 入口; 真到跨环境重放需求
 //                 出现时在导出页加输入框(届时可升级为"覆盖 HOST_1 值"语义)。
 function buildJmx(entries, opts = {}) {
-  const threads = opts.threads || "${__P(threads,10)}";
+  // threads 默认 1(巡检安全口径: 单线程顺序跑一遍): 导出脚本的主用途是生产巡检,
+  // 10 并发默认对生产是事故级压力。压测 -Jthreads=10 一参数即覆盖; 反向不成立 ——
+  // 巡检用户不知道 -J 参数时, 10 并发默认直接打爆生产。
+  const threads = opts.threads || "${__P(threads,1)}";
   const rampup = opts.rampup || "${__P(rampup,10)}";
   const loops = opts.loops || "${__P(loops,1)}";
   const think = opts.think ?? "${__P(think,500)}";
@@ -284,6 +340,12 @@ function buildJmx(entries, opts = {}) {
   const isPre = (e) => preludeIds && preludeIds.has(e.id);
   const preEntries = entries.filter(isPre);
   const bizEntries = entries.filter((e) => !isPre(e));
+  // 域名一律 ${HOST_n} 变量引用(v1.0.79): 跨域各走各的变量, 环境切换改 UDF 值即可
+  // (定义前置: setUp 线程组块在 TestPlan 组件段就调用它)
+  const samplerXml = (list) => list.map((e) => {
+    const eu = new URL(e.url);
+    return httpSampler(e, { domain: hostRef(e), protocol: eu.protocol.replace(":", "") });
+  }).join("\n");
   const body = [];
   body.push('<?xml version="1.0" encoding="UTF-8"?>');
   body.push('<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">');
@@ -293,13 +355,13 @@ function buildJmx(entries, opts = {}) {
   body.push('<boolProp name="TestPlan.functional_mode">false</boolProp>');
   body.push('<boolProp name="TestPlan.serialize_threadgroups">false</boolProp>');
   body.push('<boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>');
-  body.push('<stringProp name="TestPlan.comments">由 web-toolbox 扩展导出。运行: jmeter -Jthreads=10 -Jrampup=10 -Jloops=1 -Jthink=500 -n -t this.jmx (think=0 关闭思考时间, 拉满压测)</stringProp>');
+  body.push('<stringProp name="TestPlan.comments">由 web-toolbox 扩展导出。运行: jmeter -Jthreads=1 -Jloops=1 -Jthink=500 -n -t this.jmx (默认单线程巡检; 压测: -Jthreads=10 -Jrampup=10; think=0 关闭思考时间, 拉满压测)</stringProp>');
   body.push('<stringProp name="TestPlan.user_define_classpath"/>');
   // UDF: threads/loops/rampup/think(命令行 -J 可覆盖)
   body.push('<elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="用户定义的文本变量" enabled="true">');
   body.push('<collectionProp name="Arguments.arguments">');
   const udf = (k, v) => `<elementProp name="${k}" elementType="Argument"><stringProp name="Argument.name">${k}</stringProp><stringProp name="Argument.value">${v}</stringProp><stringProp name="Argument.metadata">=</stringProp></elementProp>`;
-  body.push(udf("threads", "${__P(threads,10)}"));
+  body.push(udf("threads", "${__P(threads,1)}"));
   body.push(udf("rampup", "${__P(rampup,10)}"));
   body.push(udf("loops", "${__P(loops,1)}"));
   body.push(udf("think", "${__P(think,500)}"));
@@ -338,6 +400,19 @@ function buildJmx(entries, opts = {}) {
   body.push('<boolProp name="CookieManager.controlledByThreadGroup">false</boolProp>');
   body.push("</CookieManager>");
   body.push("<hashTree/>");
+  // ---- setUp 线程组(登录全局一次, v1.0.91): JMeter 保证 setUp 组先于主线程组跑完 ----
+  // autoRelogin 与 setup 互斥(setUp 线程组跑完即结束, 无法失效重登), setup 优先。
+  const setupLogin = preEntries.length > 0 && opts.loginMode === "setup";
+  if (setupLogin) {
+    const pre = samplerXml(preEntries);
+    // 共享 JSR223 插进最后一个前置采样器的 hashTree(PostProcessor 须是采样器子节点才执行)
+    const lastHt = pre.lastIndexOf("</hashTree>");
+    const preShared = lastHt >= 0 ? pre.slice(0, lastHt) + jsr223ShareState(csvCols.map((c) => c.var)) + pre.slice(lastHt) : pre;
+    body.push(setupThreadGroup());
+    body.push("<hashTree>");
+    body.push(tcSummary("登录前置条件", preShared));
+    body.push("</hashTree>");
+  }
   // ---- ThreadGroup ----
   body.push('<ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="web-toolbox 回放" enabled="true">');
   body.push(`<stringProp name="ThreadGroup.on_sample_error">${opts.onSampleError || "continue"}</stringProp>`);
@@ -352,6 +427,8 @@ function buildJmx(entries, opts = {}) {
   body.push('<boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>');
   body.push("</ThreadGroup>");
   body.push("<hashTree>");
+  // setUp 模式: 主线程组头部统一注入共享 Cookie(业务采样器全部带 setUp 会话)
+  if (setupLogin && bizEntries.length) body.push(sharedCookieHeader());
   // ---- 采样器 ----
   // CSV 数据驱动(v1.0.82): 勾选「数据驱动」导出时在 ThreadGroup 内(采样器前)放 CSVDataSet。
   // 对齐 KTKI 手写 CSVDataSet 结构(delimiter/ignoreFirstLine/quotedData/recycle/shareMode)。
@@ -371,14 +448,12 @@ function buildJmx(entries, opts = {}) {
     body.push("</CSVDataSet>");
     body.push("<hashTree/>");
   }
-  // 域名一律 ${HOST_n} 变量引用(v1.0.79): 跨域各走各的变量, 环境切换改 UDF 值即可
-  const samplerXml = (list) => list.map((e) => {
-    const eu = new URL(e.url);
-    return httpSampler(e, { domain: hostRef(e), protocol: eu.protocol.replace(":", "") });
-  }).join("\n");
 
   if (preEntries.length) {
-    if (autoRelogin) {
+    if (setupLogin) {
+      // setUp 模式: 前置链已在 SetupThreadGroup 生成(登录全局只 1 次), 主组只放业务链
+      if (bizEntries.length) body.push(samplerXml(bizEntries));
+    } else if (autoRelogin) {
       // 会话失效自动重登: 前置链 + 业务链 分别进 IfController
       body.push(reloginBlock(samplerXml(preEntries), samplerXml(bizEntries), sessionMarkers));
     } else {

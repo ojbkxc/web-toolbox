@@ -224,8 +224,8 @@ const J = require("./jmx.js");
   const check = `python -c "import xml.dom.minidom,sys; xml.dom.minidom.parseString(open(sys.argv[1],encoding='utf-8').read())" "${path.join(WORK, "_tmp.jmx").replace(/\\/g, "/")}"`;
   fs.writeFileSync(path.join(WORK, "_tmp.jmx"), jmx, "utf-8");
   execSync(check, { shell: "bash" });
-  // UDF 必须是 ${__P(name,default)} 才能被 -J 覆盖
-  assert.ok(jmx.includes("${__P(threads,10)}"), "UDF threads 应为 __P 格式");
+  // UDF 必须是 ${__P(name,default)} 才能被 -J 覆盖; threads 默认 1(巡检安全口径, v1.0.90)
+  assert.ok(jmx.includes("${__P(threads,1)}"), "UDF threads 应为 __P 格式且默认 1(巡检安全)");
   assert.ok(jmx.includes("${__P(loops,1)}"), "UDF loops 应为 __P 格式");
   // 采样器域名变量化(v1.0.79): hostname 只出现在 UDF 值, 采样器 domain 一律引用 ${HOST_n}
   // —— JMeter 跨环境切域名的标准姿势(对齐手写 KTKI UAT.jmx 的 ${BASE_URL} 全变量化形态)。

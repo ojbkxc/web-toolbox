@@ -78,7 +78,7 @@ const assert = (cond, msg) => { if (!cond) { console.log('FAIL: ' + msg); proces
   assert(String(elements.get("expCount").textContent).includes("2"), '1. 初始显示已录 2 条(实际: ' + elements.get('expCount').textContent + ')');
   assert(!elements.get('btnExpJmx').disabled, '2a. 有数据时导出按钮可用');
 
-  // 2. JMX 一键导出: 登录前置自动包 OnceOnly + 关联参数化生效 + AI 链提取器注入 +
+  // 2. JMX 一键导出: 登录前置 setUp 线程组全局一次(v1.0.91) + 关联参数化生效 + AI 链提取器注入 +
   //    CSV 数据驱动(v1.0.82: 链变量 v_tok → 生成 data.csv + JMX 引用)
   downloads.length = 0;
   await elements.get('btnExpJmx').onclick();
@@ -87,7 +87,8 @@ const assert = (cond, msg) => { if (!cond) { console.log('FAIL: ' + msg); proces
   assert(!!jmxDl, '3a. JMX 下载(实得文件: ' + downloads.map((d) => d.filename).join(', ') + ')');
   const jmx = jmxDl.text;
   assert(!!csvDl && csvDl.text.includes('v_tok') && csvDl.text.includes('DAN1'), '3a2. 链变量 v_tok 生成 data.csv(表头+录制值): ' + (csvDl ? JSON.stringify(csvDl.text) : '无'));
-  assert(jmx.includes('OnceOnlyController'), '3b. 登录前置自动包仅一次控制器');
+  // v1.0.91: 登录前置默认 setUp 线程组(全局只登 1 次, 主组共享 Cookie), 不再是 OnceOnlyController
+  assert(jmx.includes('SetupThreadGroup') && jmx.includes('shared_cookie'), '3b. 登录前置自动包 setUp 线程组(全局一次+共享Cookie)');
   assert(jmx.includes('${__time()}'), '3c. 关联结果(时间戳参数化)从 storage 生效');
   assert(jmx.includes('JSONPostProcessor') && jmx.includes('token') && jmx.includes('${v_tok}'), '3c2. AI 链从 storage 生效(提取器+变量替换)');
   // 3d 锚 orderName 键名而非值 DAN1: 3c2 链替换生效后, body 值已换 \${v_tok}(键在值换)。
@@ -209,6 +210,27 @@ const assert = (cond, msg) => { if (!cond) { console.log('FAIL: ' + msg); proces
   assert(elements.get('btnRecord').style.display === 'none', '9k4. options 删当前域名(popup 开着) → 推送后录制按钮藏');
   // 尾态归位: 清单回填, 不污染后续场景
   storageData.set('toolbox.domains', ['app.test.com']);
+
+  // 9l. 权限拒绝 → 回滚(v1.0.90): onAddSite 先同步存清单再申请权限(MV3 popup 在权限
+  //     弹窗弹出时会被 Chrome 关闭, 回调不执行 —— 先存保证清单一定更新); 拒绝时回滚。
+  //     此前旧码在 request 回调里才 setDomains, popup 关闭后回调不执行 → 域名根本没添加上。
+  {
+    storageData.delete('toolbox.domains');
+    granted.clear();
+    recInfoCount = 0;
+    storageData.set('toolbox.harvest', { v: 1, entries: [] });
+    await vm.runInContext('refresh()', sandbox);
+    await new Promise(r => setTimeout(r, 30));
+    const origRequest = sandbox.chrome.permissions.request;
+    sandbox.chrome.permissions.request = (p, cb) => { lastRequest = [...p.origins]; cb(false); };
+    await elements.get('btnAddSite').onclick();
+    await new Promise(r => setTimeout(r, 50));
+    const domainsAfterDeny = (storageData.get('toolbox.domains') || []);
+    assert(!domainsAfterDeny.includes('app.test.com'), '9l. 权限拒绝: 域名回滚不入列: ' + JSON.stringify(domainsAfterDeny));
+    sandbox.chrome.permissions.request = origRequest;
+    storageData.set('toolbox.domains', ['app.test.com']);
+    granted.add('https://app.test.com/*');
+  }
 
   // 10. refreshSafe unhandled rejection 兜底(v1.0.75, #169 方向③): refresh() 的
   //     调用点大多不在可接 promise 的上下文(顶层加载/onChanged 回调/setTimeout 回调),

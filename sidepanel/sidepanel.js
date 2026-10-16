@@ -106,6 +106,7 @@ async function refreshState() {
       $("tabRecN").textContent = n ? ` ${n}` : "";
       $("expCount").textContent = n;
       updateEmptyHint(info); // "录不上"的空态直接写明原因
+      updateUnmatchedHint(info); // 部分录到但有域被过滤 → 列表上方提示(诊断盲区修复)
     }
   } catch {
     const r = await chrome.storage.local.get(["toolbox.recording"]);
@@ -245,6 +246,22 @@ function cleanVisible() {
   renderList();
 }
 $("btnClean").onclick = cleanVisible;
+
+// 部分漏录提示: 录到了一些(count>0)但有请求被域名过滤 → 列表上方黄色提示条。
+// 之前只在 count===0(空列表)时才显示 unmatchedHosts, count>0 时用户完全不知道
+// 有请求被过滤掉(典型: 配了 ics.midea.com 录到查询, 但登录走 signin.midea.com 漏录)。
+function updateUnmatchedHint(info) {
+  const el = $("unmatchedHint");
+  if (!el) return;
+  const unmatched = info.unmatched || [];
+  const active = info.recState === REC_ON || info.recState === REC_PAUSED;
+  const show = active && (info.count || 0) > 0 && unmatched.length > 0;
+  if (show) {
+    $("unmatchedCount").textContent = unmatched.length;
+    $("unmatchedList").textContent = unmatched.join(", ");
+  }
+  el.style.display = show ? "" : "none";
+}
 
 // 空列表提示: 把"为什么录不上"直接说出来(引擎诊断通道, 修"静默录不上")
 let emptyHint = "暂无录制。<br>点上方 ● Record 开始。";
@@ -1407,11 +1424,18 @@ $("btnSave").onclick = async () => {
           const mergedChain = mergeChain(autoDetectChain(cleanSet), aiChain);
           const jmxApplied = applyAiChainToJmx(applyCorr(cleanSet, corrResult), mergedChain);
           csvData = ($("optCsv") && $("optCsv").checked) ? collectCsvData(cleanSet, mergedChain) : [];
+          // 登录前置模式(v1.0.91): 「全局一次(setUp)」= setUp 线程组全局登 1 次(默认, 巡检口径);
+          // 「仅登录一次」= 主线程组内 OnceOnlyController 每线程登 1 次(压测多账号独立会话)。
+          // setup 优先于 autoRelogin(setUp 线程组跑完即结束, 无法失效重登)。
+          const setupLogin = $("optSetupLogin").checked;
+          const onceOnly = !setupLogin && $("optOnceOnly").checked;
+          const autoRelogin = !setupLogin && $("optAutoRelogin").checked;
           const jmxOpts = {
             title: "web-toolbox " + new Date().toISOString().slice(0, 16).replace("T", " "),
-            prelude: ($("optOnceOnly").checked || $("optAutoRelogin").checked) ? [...preludeIds] : null,
-            autoRelogin: $("optAutoRelogin").checked,
-            sessionMarkers: $("optAutoRelogin").checked ? SESSION_MARKERS : [],
+            prelude: (setupLogin || onceOnly || autoRelogin) ? [...preludeIds] : null,
+            loginMode: setupLogin ? "setup" : "once",
+            autoRelogin,
+            sessionMarkers: autoRelogin ? SESSION_MARKERS : [],
             csvData,
             csvFileName: `data_${stamp()}.csv`,
           };
@@ -1470,6 +1494,15 @@ $("btnDiscard").onclick = async () => {
 // harvestToExportRows/stamp 由 common.js 提供(勿重复声明)
 
 // 导出页勾选项变化时刷新提示(前置计数/仅一次开关)
+// 前置模式互斥(v1.0.91): 「全局一次(setUp)」与「仅一次/失效重登」互斥 —— 勾 setUp 时另两个
+// 灰掉(语义冲突: setUp 线程组跑完即结束, 不存在每线程登录/失效重登), 取消后恢复可选。
+function syncPreludeModeUi() {
+  const setup = $("optSetupLogin").checked;
+  $("optOnceOnly").disabled = setup;
+  $("optAutoRelogin").disabled = setup;
+  if (setup) { $("optOnceOnly").checked = false; $("optAutoRelogin").checked = false; }
+}
+$("optSetupLogin").addEventListener("change", () => { syncPreludeModeUi(); updatePreludeUi(); });
 $("optOnceOnly").addEventListener("change", () => updatePreludeUi());
 $("optAutoRelogin").addEventListener("change", () => updatePreludeUi());
 // 起点开关变化时同步 trimNote(optTrim 关闭后"从 X 开始导出"文案须明示"不会裁剪", 否则陈旧误导);

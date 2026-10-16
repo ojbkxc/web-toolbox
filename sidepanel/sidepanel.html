@@ -146,6 +146,9 @@
           <button class="btn" id="btnPickAll" title="勾选模式下: 可见集全选/再点全取消" style="font-size:11px;padding:3px 7px;display:none">全选</button>
           <button class="btn" id="btnClean" title="移除可见集里的预检/静态资源/重复请求" style="font-size:11px;padding:3px 7px">✂ 清洗</button>
         </div>
+        <div class="hint" id="unmatchedHint" style="display:none;background:#fef7e0;border:1px solid #f9d75c;border-radius:6px;padding:4px 8px;margin:4px 0">
+          ⚠ <b id="unmatchedCount">0</b> 个请求来自未配置的域被过滤: <b id="unmatchedList"></b>。<br>去 ⚙ 配置加上, 否则导出的脚本可能缺登录/依赖接口。
+        </div>
         <div class="list" id="list"><div class="empty">暂无录制。<br>点上方 ● Record 开始。</div></div>
         <!-- detailAnn: 选中条目后播报"已选中 X 状态 N"(读屏用户焦点在列表条目上,
              详情区更新本身无播报); off-screen(sr-only)纯播报不占视觉 -->
@@ -169,15 +172,16 @@
       <div class="exp">
         <div class="hint" id="expScope">已录 <b id="expCount">0</b> 条 · 可见 <b id="visCount">0</b> 条 → 导出/关联/AI 取<b>可见集</b>。格式:</div>
         <div class="wz-fmts">
-          <label class="wz-fmt checked" data-fmt="jsonl"><input type="checkbox" id="fmtJsonl" checked><div><div class="t">JSONL</div><div class="s">喂 AI / 工具链</div></div></label>
-          <label class="wz-fmt" data-fmt="har"><input type="checkbox" id="fmtHar"><div><div class="t">HAR</div><div class="s">通用流量格式</div></div></label>
+          <label class="wz-fmt" data-fmt="jsonl"><input type="checkbox" id="fmtJsonl"><div><div class="t">JSONL</div><div class="s">喂 AI / 工具链</div></div></label>
+          <label class="wz-fmt checked" data-fmt="har"><input type="checkbox" id="fmtHar" checked><div><div class="t">HAR</div><div class="s">通用流量格式</div></div></label>
           <label class="wz-fmt checked" data-fmt="jmx"><input type="checkbox" id="fmtJmx" checked><div><div class="t">JMeter</div><div class="s">.jmx 压测</div></div></label>
           <label class="wz-fmt" data-fmt="py"><input type="checkbox" id="fmtPy"><div><div class="t">Python</div><div class="s">requests 脚本</div></div></label>
         </div>
-        <div class="hint" id="preludeHint" style="display:none" title="登录前置请求: JMX 里包进「仅一次控制器」每线程只登录一次; 可在录制列表手动勾改前置标记">
+        <div class="hint" id="preludeHint" style="display:none" title="登录前置请求: 可选 setUp 线程组全局只登 1 次(线程再多也共享会话)或「仅一次控制器」每线程登一次; 可在录制列表手动勾改前置标记">
           识别到 <b id="preludeCount">0</b> 条登录前置。
-          <label style="margin-left:6px"><input type="checkbox" id="optOnceOnly" checked> 仅登录一次</label>
-          <label style="margin-left:10px" title="会话失效后下一轮循环自动重登(实验)"><input type="checkbox" id="optAutoRelogin"> 失效重登</label>
+          <label style="margin-left:6px" title="登录放 setUp 线程组, 全局只登 1 次, 主线程组共享同一会话(对标 KTKI 巡检脚本权威结构)"><input type="checkbox" id="optSetupLogin" checked> 全局一次(setUp)</label>
+          <label style="margin-left:6px" title="登录放主线程组内「仅一次控制器」, 每线程各登一次(压测多账号独立会话用)"><input type="checkbox" id="optOnceOnly"> 仅登录一次</label>
+          <label style="margin-left:10px" title="会话失效后下一轮循环自动重登(实验, 与全局一次互斥)"><input type="checkbox" id="optAutoRelogin"> 失效重登</label>
         </div>
         <div class="hint" id="trimHint" style="display:none" title="只导出选中条目起的部分, 之前的请求(如登录探索过程)被裁掉">
           从 <b id="trimFrom"></b> 开始导出。<span id="trimNote" style="color:#c8871a"></span>
