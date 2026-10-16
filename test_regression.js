@@ -605,7 +605,7 @@ const A = require("./aireport.js");
     assert.ok(sk.name && typeof sk.name === "string", `skill.name 缺失: ${JSON.stringify(sk)}`);
     assert.ok(sk.description && typeof sk.description === "string", `skill.description 缺失: ${sk.name}`);
     assert.ok(typeof sk.buildPrompt === "function", `skill.buildPrompt 非函数: ${sk.name}`);
-    assert.ok(["基础", "进阶"].includes(sk.category), `skill.category 非法: ${sk.name}`);
+    assert.ok(["基础", "高阶"].includes(sk.category), `skill.category 非法: ${sk.name}`);
   }
   const names = new Set(S.BUILTIN_SKILLS.map((s) => s.name));
   assert.strictEqual(names.size, 10, "skill 名字不得重复");
@@ -613,7 +613,7 @@ const A = require("./aireport.js");
   assert.strictEqual(S.getSkill("report").name, "report");
   assert.strictEqual(S.getSkill("nope"), null);
 
-  // 2) 进阶 5 个 prompt builder: 返回 {role,content} 数组, system+user, 带数据卫生(不打 password/token 原文)
+  // 2) 高阶 5 个 prompt builder: 返回 {role,content} 数组, system+user, 带数据卫生(不打 password/token 原文)
   const e1Long = { ...e1, body: '{"user":"a","token":"' + "A".repeat(60) + '"}' };
   const pf = A.buildPerfPrompt(e1Long, {
     concurrency: 5, total: 50, completed: 48, wallMs: 30000, rps: 1.6,

@@ -9,10 +9,19 @@ function topLevelDecls(src) {
   const names = new Map();
   let depth = 0, i = 0, line = 1;
   const isWord = (c) => /[A-Za-z0-9_$]/.test(c);
+  // 正则起点判定: 前一非空白字符是操作数位置(( , = : [ ! & | ? ; { 或文件头)。
+  // 本库是纯扩展逻辑代码无除法运算, 该启发式误判面为 0。
+  const regexAllowed = (idx) => {
+    let j = idx - 1;
+    while (j >= 0 && /\s/.test(src[j])) j--;
+    if (j < 0) return true;
+    return "(,=:[!&|?;{}".includes(src[j]);
+  };
   while (i < src.length) {
     const c = src[i];
     if (c === "\n") { line++; i++; continue; }
     if (c === "{") { depth++; i++; continue; }
+
     if (c === "}") { depth--; i++; continue; }
     if (c === '"' || c === "'" || c === "`") {
       const q = c; i++;
@@ -28,6 +37,23 @@ function topLevelDecls(src) {
       i += 2;
       while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) { if (src[i] === "\n") line++; i++; }
       i += 2; continue;
+    }
+    // 正则字面量跳过(v1.0.95): 不跳过的话, 正则里的 " ' } 会把字符串/深度状态机
+    // 带偏 —— 实测 SENSITIVE_KEY_RE 的 [^"'\s&,;}+] 让整个文件 depth 偏 -1,
+    // 函数体内的 const list/headers/r 被误报为顶层撞名(3 个假 CONFLICT)。
+    if (c === "/" && regexAllowed(i)) {
+      i++;
+      let inClass = false;
+      while (i < src.length) {
+        const rc = src[i];
+        if (rc === "\\") { i += 2; continue; }
+        if (rc === "\n") break; // 正则不跨行; 异常形态按普通文本回退扫描
+        if (rc === "[") inClass = true;
+        else if (rc === "]") inClass = false;
+        else if (rc === "/" && !inClass) { i++; break; }
+        i++;
+      }
+      continue;
     }
     if (depth === 0 && isWord(c)) {
       let j = i, w = "";

@@ -6,7 +6,7 @@
 //
 // 10 个内置 skill 分两类:
 //   基础 5 个 —— 对应现有按钮(报告/诊断/建链/文档/断言), 是"现有动作的 Skill 化"入口
-//   进阶 5 个 —— 补当前痛点(压测解读/契约破坏判定/接口清单/敏感扫描/会话特征回填)
+//   高阶 5 个 —— 补当前痛点(压测解读/契约破坏判定/接口清单/敏感扫描/会话特征回填)
 // 与 aireport.js 的 prompt builder 一一对应, 本身不含 LLM 调用逻辑。
 //
 // 浏览器: aireport.js 先加载, buildReportPrompt 等是全局函数, 直接可引用。
@@ -59,34 +59,34 @@ const BUILTIN_SKILLS = [
     buildPrompt: (entry, opts) => buildAssertPrompt(entry, opts),
   },
 
-  // ── 进阶: 补当前痛点 ──
+  // ── 高阶: 补当前痛点 ──
   {
     name: "perf",
-    category: "进阶",
+    category: "高阶",
     description: "冒烟解读: 判瓶颈, 给调优建议",
     buildPrompt: (entry, stats, opts) => buildPerfPrompt(entry, stats, opts),
   },
   {
     name: "diffTriage",
-    category: "进阶",
+    category: "高阶",
     description: "契约判定: DIFF 是噪音还是真破坏",
     buildPrompt: (recorded, live, opts) => buildDiffTriagePrompt(recorded, live, opts),
   },
   {
     name: "inventory",
-    category: "进阶",
+    category: "高阶",
     description: "接口清单: Markdown 表格",
     buildPrompt: (entries, opts) => buildInventoryPrompt(entries, opts),
   },
   {
     name: "sensitive",
-    category: "进阶",
+    category: "高阶",
     description: "敏感扫描: 查 token/密码/隐私泄漏",
     buildPrompt: (entries, opts) => buildSensitiveScanPrompt(entries, opts),
   },
   {
     name: "session",
-    category: "进阶",
+    category: "高阶",
     description: "会话回填: 找登录特征, 反哺识别规则",
     buildPrompt: (entries, opts) => buildSessionFeaturePrompt(entries, opts),
   },

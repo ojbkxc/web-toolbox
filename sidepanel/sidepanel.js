@@ -1756,7 +1756,7 @@ $("btnAiAssert").onclick = aiBuildAsserts;
 // 此前测试用 $TEMP 手工镜像对拍, 镜像漂移即测旧实现; 单源后 node 侧直接 require 同一文件。
 
 // ---------- AI 技能选择器 + 通用执行 ----------
-// 下拉框列出全部内置 skill(基础/进阶两组), 选中后「▶ 执行」用该技能分析当前导出集。
+// 下拉框列出全部内置 skill(基础/高阶两组), 选中后「▶ 执行」用该技能分析当前导出集。
 // 各 skill 的输入不同, 按 name 分发; 输出统一渲染到 expOut(带复制/下载)。
 function initSkillSel() {
   const sel = $("skillSel");
@@ -1878,7 +1878,11 @@ async function runSelectedSkill() {
       const ctx = entries.slice(Math.max(0, idx - 5), idx).concat(entries.slice(idx + 1, idx + 6));
       msgs = buildDiagnosePrompt(e, ctx);
     }
-    const r = await callLlm(msgs, { temperature: skill.name === "chain" ? 0 : 0.2 });
+    // 温度分档: 确定性任务(JSON/表格输出)用 0(chain/assert/sensitive/inventory ——
+    // 结构化输出要稳定可复现); 叙述性分析(报告/诊断/文档/冒烟/契约/会话)保留 0.2
+    // 给语言组织一点弹性。
+    const SKILL_TEMP0 = new Set(["chain", "assert", "sensitive", "inventory"]);
+    const r = await callLlm(msgs, { temperature: SKILL_TEMP0.has(skill.name) ? 0 : 0.2 });
     if (!r.ok) { setStatus("分析失败: " + r.error, "err"); return; }
     if (skill.name === "chain") {
       const chain = refineChainDirection(validateChain(extractChainJson(r.content)), src);

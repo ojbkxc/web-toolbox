@@ -146,7 +146,7 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ' + msg); } el
   ok(!s.headers.includes('SESS=abc') && !s.headers.includes('Bearer'), 'Cookie/Authorization 剥除');
   ok(s.headers.includes('X-Biz'), '业务头保留');
   ok(s.response.includes('***MASKED***'), '长 token 打码');
-  ok(!s.body.includes('SuperSecret123') === false, '密码在 body 中保留(截断至 1200, 打码仅对 40+ 长串) —— 已知边界: 短密码可外发, prompt 声明送 LLM');
+  ok(!s.body.includes('SuperSecret123'), '短密码键名打码(v1.0.95: password= 的值无论长短一律 MASKED, 原"短密码可外发"已知边界已消除)');
 
   // 4b) query 呈现与卫生(v1.0.20): prompt 条目行含 query(LLM 才能建 url. 链), 长 token 同规则打码
   const qEntry = { method: 'GET', url: 'https://x.com/list?cursor=AAA&access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9eyJhbGciOiJIUzI1NiJ9', headers: {}, body: '', status: 200, response: '' };

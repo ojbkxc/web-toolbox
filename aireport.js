@@ -6,7 +6,22 @@
 //   4. 移除明显长 token 值(>=40 连续字符)
 
 const AI_SKIP_HEADERS = new Set(["cookie", "authorization", "set-cookie",
-  "x-csrf-token", "x-xsrf-token"]);
+  "x-csrf-token", "x-xsrf-token", "x-api-key", "api-key", "proxy-authorization"]);
+
+// 硬敏感键名打码(v1.0.95): password/secret/sign 类键名的值无论长短一律打码 ——
+// scrubLong 只兜 40+ 长串, "password=123456" 短值明文外发是真实泄漏面。
+// token 类键名【不】进此表: chain 建链靠短 token 值匹配(登录响应 token=tk1 →
+// 后续请求 body.token=tk1), 打码即断链; 长 token 已由 scrubLong 兜住。
+// \b 挡子串误伤: design=/assign= 里的 sign 不命中(前后皆 \w 无边界)。
+const SENSITIVE_KEY_RE = /\b(password|passwd|pwd|secret|client_?secret|private_?key|api_?key|signature|sign)(["']?\s*(?::|=)\s*["']?)([^"'\s&,;}]+)/gi;
+function scrubSensitiveKeys(s) {
+  return String(s).replace(SENSITIVE_KEY_RE, (m, key, sep) => key + sep + "***MASKED***");
+}
+// AI 出扩展前的统一脱敏(两级): 长串打码(scrubLong) + 硬敏感键名打码。
+// 幂等: scrubLong 产物含 ***MASKED***(14 字符)不命中 40+; 键名打码对已打码值再跑仍原样。
+function scrubAi(s) {
+  return scrubSensitiveKeys(scrubLong(s));
+}
 
 // 脱敏截断: 单条条目 -> AI 安全摘要。
 // 只消费 e.headers/e.body/e.response/e.url/e.status/e.method/e.durationMs, 缺哪个降级哪个:
@@ -18,27 +33,27 @@ function aiSanitizeEntry(e, opts = {}) {
   const respMax = opts.respMax ?? 600;
   const headers = Object.entries(e.headers || {})
     .filter(([k]) => !AI_SKIP_HEADERS.has(k.toLowerCase()))
-    .map(([k, v]) => `${k}: ${scrubLong(v)}`)
+    .map(([k, v]) => `${k}: ${scrubAi(v)}`)
     .join("\n");
   return {
     method: e.method,
     // url 也要打码: query 里的长 token(access_token/签名)与 body 同规则 ——
     // 诊断/冒烟/断言/diffTriage 的 user 消息直接呈现 s.url 全量, 原样送会泄漏
-    url: e.url ? scrubLong(e.url) : "",
+    url: e.url ? scrubAi(e.url) : "",
     status: e.status,
     // 耗时透传(v1.0.58): 报告 prompt 要 LLM 找"慢请求", 数据里没耗时就是无米之炊。
     // 纯增量键 —— 不呈现耗时的 prompt 不读它即无感知; 无值时 0(旧数据/开源样本兜底)。
     durationMs: e.durationMs || 0,
     headers,
-    body: e.body ? scrubLong(e.body).slice(0, bodyMax) : "",
+    body: e.body ? scrubAi(e.body).slice(0, bodyMax) : "",
     // respMax 语义是"前段预算", 超预算时保留前段+尾段两头(中间省略号)而非只砍头 ——
     // verdict 的非 JSON diff 指纹是"前 200 + 后 200"(replay.js normalizeForCompare),
     // 大响应差异在尾部时 verdict 判 DIFF 但只砍头的 prompt 里没有差异段, LLM 无从
     // 判定(diffTriage 的判定材料 = 录制 response vs live text, 判定面与呈现面口径须对齐)。
     response: e.response
       ? (String(e.response).length > respMax
-        ? scrubLong(String(e.response).slice(0, Math.max(0, respMax - 200))) + "\n…(中间省略约 " + (String(e.response).length - respMax) + " 字符)…\n" + scrubLong(String(e.response).slice(-200))
-        : scrubLong(e.response))
+        ? scrubAi(String(e.response).slice(0, Math.max(0, respMax - 200))) + "\n…(中间省略约 " + (String(e.response).length - respMax) + " 字符)…\n" + scrubAi(String(e.response).slice(-200))
+        : scrubAi(e.response))
       : "",
   };
 }
@@ -51,13 +66,14 @@ function scrubLong(s) {
 }
 
 // prompt 条目行的路径呈现: pathname + query(截断到 300 字符防长 query 挤爆条目行)。
-// query 过 scrubLong —— 40+ 长参数(access_token/签名)与 body 同规则打码;
-// aiSanitizeEntry 已在源头打码 url, 这里再码一次是幂等的(scrubLong 对已码串不再命中),
-// 保留双重 scrub 是 pathLine 作为独立 helper 的边界防御(不依赖调用方先 sanitize)。
-// 短参数(cursor/分页/排序)不受影响, LLM 能识别"这里有个 query 参数"以建 url. 链。
+// query 过 scrubAi —— 40+ 长参数(access_token/签名)与 body 同规则打码, 硬敏感
+// 键名(password=/secret=)短值也打码; aiSanitizeEntry 已在源头打码 url, 这里再码
+// 一次是幂等的(scrubAi 对已码串不再命中), 保留双重 scrub 是 pathLine 作为独立
+// helper 的边界防御(不依赖调用方先 sanitize)。
+// 短参数(cursor/分页/排序/token 短值)不受影响, LLM 能识别"这里有个 query 参数"以建 url. 链。
 function pathLine(url) {
   const u = new URL(url);
-  const q = u.search ? scrubLong(u.search.slice(1, 301)) : "";
+  const q = u.search ? scrubAi(u.search.slice(1, 301)) : "";
   return `${u.pathname}${q ? "?" + q : ""}`;
 }
 
@@ -85,6 +101,7 @@ function buildReportPrompt(entries, opts = {}) {
       `\n3. **关键接口**: 哪些是"写操作"(POST/PUT 且改数据), 哪些是读操作; 写操作标注⚠` +
       `\n4. **参数依赖**: 前一个接口的响应值被后一个接口引用的地方(如 orderId)` +
       `\n5. **异常与风险**: 非 2xx 请求、慢请求(条目带耗时 ms 时以此为据)、可疑字段` +
+      `\n6. **性能速览**: 条目带耗时 ms 时, 按 <100ms / 100~500ms / >500ms 三档统计各档条数, 点名最慢 3 条(path+ms)并给一句瓶颈猜测(网络/服务端/前端串行); 条目无耗时数据则整段省略, 不编造` +
       `\n只依据给定流量, 不要猜测流量之外的信息。接口名可以按路径语义命名。` },
     { role: "user", content:
       `以下是 ${entries.length} 条按时间顺序录制的请求${entries.length > maxEntries ? `(只取前 ${maxEntries} 条)` : ""}:\n\n${list}` },
@@ -143,6 +160,12 @@ function buildChainPrompt(entries, opts = {}) {
       `{"from":<前一个接口的序号数字>,"fromJsonPath":"响应里的JSON路径如 data.orderId(无则填响应字段名)","to":<后一个接口的序号数字>,"toParam":"后一个请求里的参数名(如 body.orderNo / header.X-Token / url.id)","var":"自定义变量名如 token1/orderId2","value":"录制时的示例值"}\n` +
       `toParam 三种形态都会被自动注入: body.字段名(JSON 体和 k=v&k=v 表单体都支持) / header.头名 / url.参数名(query 参数如 url.id=1, 或 REST 路径段如 /order/id/123 也用 url.id)。\n` +
       `fromJsonPath 支持数字下标(如 data.list.0.id); 数组字段省略下标时默认取首元素。\n` +
+      `完整示例(输入流量节选):\n` +
+      `[1] POST /login 请求体: {"user":"u"} 响应: {"data":{"token":"tk123","userId":"u1"}}\n` +
+      `[2] POST /order/create 请求体: {"token":"tk123","buyerId":"u1"} 响应: {"data":{"orderNo":"SO1"}}\n` +
+      `[3] GET /order/detail?orderNo=SO1\n` +
+      `正确输出:\n` +
+      `[{"from":1,"fromJsonPath":"data.token","to":2,"toParam":"body.token","var":"token1","value":"tk123"},{"from":1,"fromJsonPath":"data.userId","to":2,"toParam":"body.buyerId","var":"userId1","value":"u1"},{"from":2,"fromJsonPath":"data.orderNo","to":3,"toParam":"url.orderNo","var":"orderNo1","value":"SO1"}]\n` +
       `规则: 只依赖给出的流量; 没有跨接口传递就不要编; 序号用 [n] 里的数字(从 1 开始)。` +
       `方向是硬约束: 流量按时间顺序排列, 值只能从【时间在前】的接口响应流向【时间在后】的接口请求 —— ` +
       `from 必须是【产出值】的接口(时间在前, 值在它的响应里), to 必须是【消费值】的接口(时间在后, 值在它的请求里); ` +
@@ -216,6 +239,7 @@ function buildDocPrompt(entries, opts = {}) {
       `\n- **请求示例**: 原样 JSON/文本\n` +
       `- **响应示例**: 录制响应(截断到关键字段)\n` +
       `- **依赖前置**: 引用哪个前序接口的哪个响应字段(如: 依赖[3]的 data.orderId)\n` +
+      `文档末尾加一段「公共参数」: 多个接口都出现的参数(如租户/企业 ID、分页参数、公共鉴权头)单独列出, 不在每个接口里重复。\n` +
       `只依据给定流量; 每个接口都覆盖; 中文输出。` },
     { role: "user", content:
       `以下是 ${entries.length} 条按时间顺序录制的请求${entries.length > maxEntries ? `(只取前 ${maxEntries} 条)` : ""}:\n\n${list}` },
@@ -229,6 +253,8 @@ function buildAssertPrompt(entry, opts = {}) {
     { role: "system", content:
       `你是接口测试专家。给出一条请求的录制(请求+响应), 请生成"该接口成功/失败判定"的一组断言规则。` +
       `输出 JSON 数组(不要解释), 每项:\n{"type":"status|contains|not_contains|json_eq|json_regex","target":"响应状态码 或 响应体子串 或 JSON路径","expect":"期望值(正则支持)"}\n` +
+      `示例(响应 {"resultCode":"ISC-000","data":{"orderNo":"SO123"},"msg":"ok"}):\n` +
+      `[{"type":"status","target":"status","expect":"200"},{"type":"json_eq","target":"resultCode","expect":"ISC-000"},{"type":"json_regex","target":"data.orderNo","expect":"^SO[0-9]+$"},{"type":"not_contains","target":"","expect":"exception"}]\n` +
       `要求: 1) 覆盖成功判定(该响应正常时一定有); 2) 覆盖业务失败判定(如错误码/错误消息字段); 3) 3~6 条, 具体可执行。` },
     { role: "user", content:
       `方法: ${s.method}\nURL: ${s.url}\n状态: ${s.status}\n业务头:\n${s.headers}\n请求体:\n${s.body}\n响应:\n${s.response}` },
@@ -357,7 +383,7 @@ function buildSessionFeaturePrompt(entries, opts = {}) {
 // node 导出(供单测; 浏览器 script 标签加载时此分支不执行)
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
-    aiSanitizeEntry, scrubLong, pathLine, buildReportPrompt, buildDiagnosePrompt,
+    aiSanitizeEntry, scrubLong, scrubSensitiveKeys, scrubAi, pathLine, buildReportPrompt, buildDiagnosePrompt,
     buildChainPrompt, extractChainJson, validateChain,
     buildDocPrompt, buildAssertPrompt,
     buildPerfPrompt, buildDiffTriagePrompt, buildInventoryPrompt,
