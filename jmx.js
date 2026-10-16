@@ -10,6 +10,10 @@ if (typeof isSkipHeader === "undefined") {
     return SKIP_HEADERS.includes(String(k).toLowerCase());
   }
 }
+// detectSuccessIndicator 由 common.js 提供(同页全局); node 单测兜底 require
+if (typeof detectSuccessIndicator === "undefined") {
+  ({ detectSuccessIndicator } = require("./common.js"));
+}
 // 格式完全参照 iserver/scripts/gen_ktki_perf_jmx.py 的权威生成器
 // (该脚本生成的 jmx 已在 SPM销售性能-UAT 实测 31 采样器 0 失败)。
 //
@@ -181,18 +185,17 @@ function httpSampler(e, opts) {
   parts.push('<intProp name="Assertion.test_type">8</intProp>');
   parts.push('</ResponseAssertion>');
   parts.push('<hashTree/>');
-  // JSONPathAssertion: $.resultCode == bizSuccessCode(仅业务 API 的 POST 请求)
-  // M3(v1.0.86): 前缀/成功码参数化, 不再硬编码 /web/iservice- 和 ISC-000
-  const bizPrefix = opts.bizPathPrefix || "/web/iservice-";
-  const bizCode = opts.bizSuccessCode || "ISC-000";
-  if (e.path && e.path.startsWith(bizPrefix) && e.method === 'POST') {
-    parts.push(`<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="resultCode=${xmlEsc(bizCode)} 断言" enabled="true">`);
-    parts.push('<stringProp name="JSON_PATH">$.resultCode</stringProp>');
-    parts.push(`<stringProp name="EXPECTED_VALUE">${xmlEsc(bizCode)}</stringProp>`);
+  // JSONPathAssertion(v1.0.88): 响应推断式 —— 从录制响应自动检测成功指示字段,
+  // 不靠路径前缀/方法/硬编码成功码, 任何系统的 API 都能自动挂业务断言。
+  const si = detectSuccessIndicator(e.response);
+  if (si) {
+    parts.push(`<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="${xmlEsc(si.jsonPath)}=${xmlEsc(si.expectedValue)} 断言" enabled="true">`);
+    parts.push(`<stringProp name="JSON_PATH">${xmlEsc(si.jsonPath)}</stringProp>`);
+    parts.push(`<stringProp name="EXPECTED_VALUE">${xmlEsc(si.expectedValue)}</stringProp>`);
     parts.push('<boolProp name="JSONVALIDATION">true</boolProp>');
     parts.push('<boolProp name="EXPECT_NULL">false</boolProp>');
     parts.push('<boolProp name="INVERT">false</boolProp>');
-    parts.push('<boolProp name="ISREGEX">true</boolProp>');
+    parts.push('<boolProp name="ISREGEX">false</boolProp>');
     parts.push('</JSONPathAssertion>');
     parts.push('<hashTree/>');
   }
@@ -369,12 +372,9 @@ function buildJmx(entries, opts = {}) {
     body.push("<hashTree/>");
   }
   // 域名一律 ${HOST_n} 变量引用(v1.0.79): 跨域各走各的变量, 环境切换改 UDF 值即可
-  // M3(v1.0.86): 业务路径前缀/成功码参数化, 传给 httpSampler
-  const bizPathPrefix = opts.bizPathPrefix || "/web/iservice-";
-  const bizSuccessCode = opts.bizSuccessCode || "ISC-000";
   const samplerXml = (list) => list.map((e) => {
     const eu = new URL(e.url);
-    return httpSampler(e, { domain: hostRef(e), protocol: eu.protocol.replace(":", ""), bizPathPrefix, bizSuccessCode });
+    return httpSampler(e, { domain: hostRef(e), protocol: eu.protocol.replace(":", "") });
   }).join("\n");
 
   if (preEntries.length) {

@@ -37,9 +37,15 @@ for (const [name, src] of [['common', common], ['jmx', jmx], ['py', py]]) {
 }
 // 档案面(JSONL/HAR): response/status/mime/durationMs 是保真格式专属
 assert(common.includes('.response') && common.includes('.status') && common.includes('.mime') && common.includes('.durationMs'), 'f2. JSONL/HAR 保真字段(response/status/mime/durationMs)在');
-// JMX 不消费 response/status(压测语义): e.response/e.status 出现即漂移
+// JMX 不消费 response/status(压测语义): e.status 出现即漂移
 // (注意区分: jmx 里 r.status 是 python/运行时变量, 只查 e.xxx 条目字段形态)
-assert(!/\be\.response\b/.test(jmx), 'f3. JMX 不消费 e.response(压测脚本不带响应体)');
+// v1.0.88: jmx.js 读 e.response 推断成功指示字段(detectSuccessIndicator), 但只取
+// 字段名+成功值(如 $.resultCode=ISC-000), 不嵌入完整响应体。改为运行时输出检查。
+const { buildJmx } = require('../jmx.js');
+const _mk = (id, method, url, extra) => Object.assign({ id, method, url, path: new URL(url).pathname, query: "", headers: {}, body: "", status: 200, mime: "application/json", response: "{}", ts: "2026-10-16T10:00:00Z" }, extra);
+const _probeResp = '{"resultCode":"ISC-000","data":{"secret":"RESP_BODY_LEAK_PROBE_XYZ"}}';
+const _jmxOut = buildJmx([_mk("p1", "POST", "https://h/api/x", { response: _probeResp })]);
+assert(!_jmxOut.includes("RESP_BODY_LEAK_PROBE_XYZ"), 'f3. JMX 输出不包含录制响应体(只取成功指示字段, v1.0.88)');
 assert(!/\be\.status\b/.test(jmx), 'f4. JMX 不消费 e.status(压测脚本不带录制状态码)');
 assert(!/\be\.mime\b/.test(jmx) && !/\be\.durationMs\b/.test(jmx), 'f5. JMX 不消费 e.mime/e.durationMs');
 // PY 同语义

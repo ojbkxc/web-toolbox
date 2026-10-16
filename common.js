@@ -125,7 +125,7 @@ if (typeof module !== "undefined" && module.exports) {
   applyDynamicsToQuery = _corr.applyDynamicsToQuery;
   module.exports = { isSkipHeader, isSkippable, filterSkippable, decodeHarvest, normalizeEntry,
     toJsonl, stamp, harvestToExportRows, harQueryString, buildHar, applyCorr, applyAiChainToJmx,
-    dedupeKey, dedupeIdentical, collectCsvData, autoDetectChain, mergeChain };
+    dedupeKey, dedupeIdentical, collectCsvData, autoDetectChain, mergeChain, detectSuccessIndicator };
 }
 
 // 读取已配置域名清单
@@ -582,4 +582,40 @@ function mergeChain(autoChain, aiChain) {
   const autoOnly = auto.filter((c) => !aiKeys.has((c.fromId ?? c.from) + "->" + (c.toId ?? c.to) + ":" + c.toParam));
   const renamed = autoOnly.map((c) => aiVars.has(c.var) ? { ...c, var: c.var + "_auto" } : c);
   return [...ai, ...renamed];
+}
+// 响应推断式断言(v1.0.88): 从录制响应 JSON 自动推断成功指示字段,
+// 不靠路径前缀/方法/硬编码成功码 —— 任何系统的 API 都能自动挂业务断言。
+// 业界对标: Apifox"从期望响应自动生成" + LoadRunner ContentCheck 模式规则。
+// 返回 { jsonPath, expectedValue } 或 null。
+function detectSuccessIndicator(response) {
+  if (!response) return null;
+  let resp;
+  try { resp = JSON.parse(response); } catch { return null; }
+  if (typeof resp !== "object" || resp == null || Array.isArray(resp)) return null;
+  // 候选字段名(按常见度排序): 根级 + 一层嵌套
+  const ROOT_FIELDS = ["resultCode", "code", "retCode", "status", "errCode", "errorCode", "success"];
+  const NESTED_FIELDS = [["error", "code"], ["result", "code"], ["result", "status"], ["head", "retCode"]];
+  // 成功值判定: "0"/0 / true / ok / success / XXX-000(系统前缀+000=成功)
+  const isSuccessValue = (sv) => {
+    if (sv === "0" || sv === "true") return true;
+    const lower = sv.toLowerCase();
+    if (lower === "ok" || lower === "success") return true;
+    return /^[A-Z]+-000$/.test(sv);
+  };
+  for (const field of ROOT_FIELDS) {
+    const val = resp[field];
+    if (val != null && isSuccessValue(String(val))) {
+      return { jsonPath: "$." + field, expectedValue: String(val) };
+    }
+  }
+  for (const [p1, p2] of NESTED_FIELDS) {
+    const nested = resp[p1];
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+      const val = nested[p2];
+      if (val != null && isSuccessValue(String(val))) {
+        return { jsonPath: "$." + p1 + "." + p2, expectedValue: String(val) };
+      }
+    }
+  }
+  return null;
 }
