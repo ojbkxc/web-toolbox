@@ -94,6 +94,10 @@ const assert = (cond, msg) => { if (!cond) { console.log('FAIL: ' + msg); proces
   // 3d 锚 orderName 键名而非值 DAN1: 3c2 链替换生效后, body 值已换 \${v_tok}(键在值换)。
   assert(jmx.includes('orderName') && !jmx.includes('[object Object]'), '3d. body 为真实字符串(键名保留)');
   assert(jmx.includes('CSVDataSet') && jmx.includes('variableNames') && jmx.includes('v_tok'), '3d2. JMX 挂 CSVDataSet 引用链变量');
+  // v1.0.94: .jmx 内引用的 csvFile 默认值必须与实际下载的 .csv 文件名严格一致 ——
+  // 之前两次独立 stamp() 跨秒错位 → JMeter 找不到 CSV → 主线程组静默 0 采样器。
+  const csvRef = (jmx.match(/__P\(csvFile,([^)]+)\)/) || [])[1];
+  assert(!!csvRef && csvDl && csvRef === csvDl.filename, '3d3. JMX 引用的 CSV 文件名与实际下载一致(防 stamp 跨秒错位): ' + csvRef + ' vs ' + (csvDl ? csvDl.filename : '无'));
 
   // 3. PY 导出
   downloads.length = 0;

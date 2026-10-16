@@ -244,6 +244,9 @@ function cleanVisible() {
   persistEntries();
   setRecStatus(`✂ 已移除 ${n} 条可清洗请求(预检/静态资源${dupes ? " + 重复请求" : ""})。`, "ok");
   renderList();
+  // 前置标记可能被连带清洗删除 → 导出页"识别到 N 条登录前置"计数须同步
+  // (updatePreludeUi 内部连带 updateCsvUi; 此前漏调, 计数陈旧误导导出配置)。
+  updatePreludeUi();
 }
 $("btnClean").onclick = cleanVisible;
 
@@ -295,6 +298,9 @@ function updateEmptyHint(info) {
 function renderList() {
   const list = $("list");
   const detail = $("detail");
+  // 勾选/退选/清洗都会全量重建列表 → 不保滚动位置的话视口跳回顶部, 勾几十条时
+  // 每勾一条都要重新滚回去找下一条。重建前存 scrollTop, 重建后恢复。
+  const keepScroll = list.scrollTop || 0;
   const vis = visibleEntries();
   $("tabRecN").textContent = entries.length ? ` ${entries.length}` : "";
   $("visN").textContent = filterKw.length ? `可见 ${vis.length}/${entries.length}` : "";
@@ -317,8 +323,7 @@ function renderList() {
     const slow = entries.filter((e) => (e.durationMs || 0) > SLOW_MS).length;
     detail.innerHTML = `<div class="empty">← 点左侧请求看详情<br><br>共 <b>${entries.length}</b> 条${fails ? ` · <span style="color:#d93025">失败 ${fails}</span>` : ""}${slow ? ` · <span style="color:#b06000">慢 ${slow}</span>` : ""}</div>`;
   }
-  for (const e of [...vis].reverse()) {
-    const div = document.createElement("div");
+  for (const e of [...vis].reverse()) {    const div = document.createElement("div");
     div.className = "req" + (e.id === selectedId ? " sel" : "");
     const hasDyn = corrResult && corrResult.groups.some((g) => g.method === e.method && g.path === e.path);
     const isPre = preludeIds.has(e.id);
@@ -375,6 +380,7 @@ function renderList() {
     frag.appendChild(div);
   }
   list.appendChild(frag);
+  list.scrollTop = keepScroll; // 恢复视口位置(勾选/清洗高频操作不丢滚动)
 }
 
 // ---------- 导出集勾选(选择模式) ----------
@@ -389,6 +395,9 @@ function persistPickIds() {
   else chrome.storage.local.remove(KEY_PICK_IDS, () => {});
 }
 function togglePickMode() {
+  // 退出且有勾选先确认: 误点"✓ 已选 N"会静默清空全部勾选 —— 勾几十条业务接口的
+  // 实打实丢失, 与"侧栏一关勾选全丢"同级别的数据丢失面, 拦一道。
+  if (pickMode && pickIds.size && !confirm(`退出勾选模式将清空已选的 ${pickIds.size} 条。继续?`)) return;
   pickMode = !pickMode;
   if (!pickMode) pickIds = new Set();
   $("btnPick").classList.toggle("pri", pickMode);
@@ -1376,14 +1385,13 @@ async function copyText(text) {
 }
 
 // ---------- 导出向导 ----------
+// 格式卡片: label.wz-fmt 隐式关联 checkbox(点卡片任意处浏览器原生转发勾选)。
+// 高亮同步只挂 change —— 不手动翻转 checked: label 转发 + 手动翻转 = 双翻转互相
+// 抵消, 点卡片文字 UI 高亮切换了而 checkbox 实际没变(导出格式与所见不符)。
 (function initFmtCards() {
   for (const c of document.querySelectorAll(".wz-fmt")) {
     const cb = c.querySelector("input");
-    c.addEventListener("click", () => {
-      cb.checked = !cb.checked;
-      c.classList.toggle("checked", cb.checked);
-    });
-    cb.addEventListener("click", (ev) => ev.stopPropagation());
+    cb.addEventListener("change", () => c.classList.toggle("checked", cb.checked));
   }
 })();
 
@@ -1461,7 +1469,7 @@ $("btnSave").onclick = async () => {
   el.innerHTML = out.map((f) => `<span class="hd2">${escHtml(f.name)}</span>\n${escHtml(f.data.slice(0, 1200))}${f.data.length > 1200 ? "\n…" : ""}`).join("\n\n────\n\n");
   setStatus(`✓ 已导出 ${out.length} 个文件(下载目录)。数据保留, 可重导。` +
     (cleanDropped ? ` JMX/PY 已剔除 ${cleanDropped} 条预检/静态资源(JSONL/HAR 保真全量)。` : "") +
-    (csvData && csvData.length ? ` JMX 已挂 ${csvData.length} 列 CSV 数据驱动(data.csv 同目录)。` : "") +
+    (csvData && csvData.length ? ` JMX 已挂 ${csvData.length} 列 CSV 数据驱动 —— CSV 文件必须与 .jmx 放同目录, 漏拿会导致 JMeter 静默 0 采样器。` : "") +
     (errs.length ? `\n⚠ ${errs.length} 个格式失败: ${errs.join("; ")}` : ""), errs.length ? "" : "ok");
 };
 

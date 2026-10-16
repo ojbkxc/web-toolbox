@@ -90,6 +90,8 @@ const assert = (cond, msg) => { if (!cond) { console.log('FAIL: ' + msg); proces
     assert((elements.get('trimNote').textContent || '').includes('不在勾选集'), '1e. 勾选 {r1,r3} 起点选 r2 → note 明示不裁剪(togglePick 联动): ' + elements.get('trimNote').textContent);
     vm.runInContext('togglePick("r2")', sb);
     assert((elements.get('trimNote').textContent || '') === '', '1f. 起点入勾选集后 note 消失(togglePick 联动, 无须手动 updateTrimUi)');
+    // v1.0.94: 退出勾选模式有勾选时先 confirm(误点静默清空防护) —— realm 补 stub(与 1b 清洗 realm 同款)
+    vm.runInContext('globalThis.confirm = () => true', sb);
     vm.runInContext('togglePickMode()', sb);
     assert((elements.get('trimNote').textContent || '') === '', '1g. 退出勾选模式 note 清空(togglePickMode 联动)');
     // 全清退回语义提示(v1.0.38): togglePickAll 全清 → setRecStatus 明说退回可见集

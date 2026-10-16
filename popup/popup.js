@@ -171,6 +171,7 @@ async function quickExport(fmts) {
   const chain = (await chrome.storage.local.get(["toolbox.aiChain"]))["toolbox.aiChain"] || null;
   const out = [];
   const errs = [];
+  let csvExported = false; // JMX 带 CSV 数据驱动时, 尾部提示"必须与 .jmx 同目录"用
   // JMX/PY 导出净化(与侧栏同一套规则, common.js): 预检(OPTIONS)/静态资源/SSE 对
   // 压测与重放脚本没有意义, 自动剔除并透明提示; JSONL/HAR 是数据格式, 保真全量。
   const { entries: cleanSet, dropped } = filterSkippable(entries);
@@ -188,16 +189,21 @@ async function quickExport(fmts) {
         // 依赖链变量(单号/ID)压测时按行换值; 无链时为空, 不生成 CSVDataSet。
         // collectCsvData 在 applyAiChainToJmx 之前调(取录制值, 不是 ${var} 占位符)。
         const csvData = collectCsvData(cleanSet, mergedChain);
-        out.push({ name: `webtoolbox_${stamp()}.jmx`,
+        // 一次 stamp 两处复用: .jmx 内引用的 csvFile 默认值与实际下载的 .csv 文件名
+        // 必须严格一致 —— 两次独立 stamp() 跨秒错位会让 JMeter 找不到 CSV, 主线程组
+        // 静默 0 采样器(无报错, 极难排查)。
+        const ts = stamp();
+        const csvName = `data_${ts}.csv`;
+        out.push({ name: `webtoolbox_${ts}.jmx`,
           data: buildJmx(jmxApplied, {
             title: "web-toolbox " + new Date().toISOString().slice(0, 16).replace("T", " "),
             prelude: auto.ids.size ? [...auto.ids] : null,
             // 登录全局一次(v1.0.91): setUp 线程组 + 共享 Cookie, 与侧栏默认一致(巡检口径)
             loginMode: "setup",
             csvData,
-            csvFileName: `data_${stamp()}.csv`,
+            csvFileName: csvName,
           }), mime: "application/xml" });
-        if (csvData.length) out.push({ name: `data_${stamp()}.csv`, data: csvTemplateText(csvData), mime: "text/csv" });
+        if (csvData.length) { out.push({ name: csvName, data: csvTemplateText(csvData), mime: "text/csv" }); csvExported = true; }
       }
       if (f === "py") out.push({ name: `replay_${stamp()}.py`, data: buildPyScript(cleanSet, "cookies.state.json", { sessionMarkers: SESSION_MARKERS, aiChain: chain }), mime: "text/x-python" });
     } catch (err) {
@@ -206,7 +212,7 @@ async function quickExport(fmts) {
   }
   if (!out.length) { setExpNote("导出失败: " + errs.join("; "), "err"); return; }
   for (const f of out) downloadText(f.name, f.data, f.mime);
-  setExpNote(`✓ 已下载 ${out.length} 个文件` + (dropped ? ` (JMX/PY 剔除 ${dropped} 条预检/静态资源)` : "") + (errs.length ? `(${errs.length} 个失败)` : ""), errs.length ? "err" : "ok");
+  setExpNote(`✓ 已下载 ${out.length} 个文件` + (dropped ? ` (JMX/PY 剔除 ${dropped} 条预检/静态资源)` : "") + (csvExported ? ` · CSV 必须与 .jmx 放同目录(漏拿 JMeter 静默 0 采样器)` : "") + (errs.length ? `(${errs.length} 个失败)` : ""), errs.length ? "err" : "ok");
 }
 
 // 导出结果行内提示(写在 expCount 位置, 3s 后还原成条数)
