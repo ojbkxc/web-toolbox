@@ -88,16 +88,25 @@ function applyAiChain(entries, chain) {
           // \b 这类合法转义, 语义也被换成退格符 —— 值被静默毁掉。表单体分支无此问题
           // (encodeURIComponent 把 \ 一并编码)。
           const safeVal = val.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-          const jsonBody = body.replace(new RegExp(`"${le}"\\s*:\\s*"[^"]*"`), () => { bodyHit = true; return `"${leaf}": "${safeVal}"`; });
-          if (bodyHit) { body = jsonBody; }
-          else {
-            const jsonBody2 = body.replace(new RegExp(`"${le}"\\s*:\\s*[0-9A-Za-z_.-]+`), () => { bodyHit = true; return `"${leaf}": "${safeVal}"`; });
-            if (bodyHit) body = jsonBody2;
+          // 值锚定优先(v1.0.96, 链带录制值): 同名异值字段按名首匹配会注错位置 ——
+          // 先替换录制值出现的那处(终点锚防前缀值误配), miss 再按名首匹配兜底(AI 链不带 value)
+          if (c.value != null) {
+            const ve = esc(c.value);
+            const vb = body.replace(new RegExp(`"${le}"\\s*:\\s*("|)${ve}\\1(?=[,}\\]\\s]|$)`), () => { bodyHit = true; return `"${leaf}": "${safeVal}"`; });
+            if (bodyHit) body = vb;
+          }
+          if (!bodyHit) {
+            const jsonBody = body.replace(new RegExp(`"${le}"\\s*:\\s*"[^"]*"`), () => { bodyHit = true; return `"${leaf}": "${safeVal}"`; });
+            if (bodyHit) { body = jsonBody; }
             else {
-              // 表单体 k=v&k2=v2(application/x-www-form-urlencoded): AI 建链不该
-              // 只认 JSON —— 内网老系统大量是表单 POST, 值需 URL 编码
-              const formBody = body.replace(new RegExp(`(^|&)${le}=[^&]*`), (_m, p1) => { bodyHit = true; return `${p1}${leaf}=${v}`; });
-              if (bodyHit) body = formBody;
+              const jsonBody2 = body.replace(new RegExp(`"${le}"\\s*:\\s*[0-9A-Za-z_.-]+`), () => { bodyHit = true; return `"${leaf}": "${safeVal}"`; });
+              if (bodyHit) body = jsonBody2;
+              else {
+                // 表单体 k=v&k2=v2(application/x-www-form-urlencoded): AI 建链不该
+                // 只认 JSON —— 内网老系统大量是表单 POST, 值需 URL 编码
+                const formBody = body.replace(new RegExp(`(^|&)${le}=[^&]*`), (_m, p1) => { bodyHit = true; return `${p1}${leaf}=${v}`; });
+                if (bodyHit) body = formBody;
+              }
             }
           }
           // query 参数替换

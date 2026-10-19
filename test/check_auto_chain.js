@@ -1,5 +1,7 @@
-// check_auto_chain.js —— 轻量自动关联检测走查(v1.0.84)。
+// check_auto_chain.js —— 轻量自动关联检测走查(v1.0.84, v1.0.96 扩充)。
 // autoDetectChain 不依赖 AI, 用规则扫描: from 响应叶子字段值出现在 to 请求 body/url → 生成 chain。
+// v1.0.96: 纯数字单号(>=8 位)/裸值 JSON/表单体 k=v 三形态纳入检测; 链携带 value 快照
+// 供下游值锚定替换; mergeChain 键归一 body. 前缀(corr 链与轻量链同关联去重)。
 // mergeChain 合并轻量链和 AI 链(AI 优先, 轻量补充)。
 // 端到端: autoDetectChain → mergeChain → applyAiChainToJmx → buildJmx → JMX 含 JSONPostProcessor + CSVDataSet。
 // 核心场景: AI 不可用(aiChain=null/[])时, 轻量检测仍能产出关联。
@@ -30,13 +32,13 @@ assert(link.fromId === "e0" && link.toId === "e1", "from=e0, to=e1");
 assert(link.fromJsonPath.includes("orderNo"), "fromJsonPath 含 orderNo: " + link.fromJsonPath);
 assert(link.var.startsWith("V_"), "变量名 V_ 前缀: " + link.var);
 
-// --- 场景2: 黑名单/短值/纯数字不匹配 ---
+// --- 场景2: 黑名单/短值/短纯数字不匹配 ---
 const entries2 = [
   mk("a0", "POST", "https://host/api/login", { response: '{"resultCode":"ISC-000","ok":true,"code":"1"}' }),
   mk("a1", "POST", "https://host/api/use", { body: '{"resultCode":"ISC-000","ok":"true","code":"1"}' }),
 ];
 const chain2 = autoDetectChain(entries2);
-assert(chain2.length === 0, `黑名单/短值/纯数字不匹配(实得 ${chain2.length} 条)`);
+assert(chain2.length === 0, `黑名单/短值/短纯数字不匹配(实得 ${chain2.length} 条)`);
 
 // --- 场景3: URL query 参数关联 ---
 const entries3 = [
@@ -156,13 +158,69 @@ const cnEntries = [
 const cnChain = autoDetectChain(cnEntries);
 assert(cnChain.length >= 1, `中文值关联检测到(实得 ${cnChain.length}): ` + JSON.stringify(cnChain.map((c) => c.var)));
 
-// --- 场景14: 超大 response 跳过(M5) ---
-const hugeResp = '{"d":{"v":"' + "x".repeat(100001) + '"}}';
+// --- 场景14: 大响应建链上限对齐 + 超长叶子值防御(v1.0.96) ---
+// 检测上限与录制截断(200KB)对齐 —— 100~200KB 大查询响应此前录了但静默不链;
+// 超长叶子值(>500 字符, base64/大文本)不入链: 无业务关联意义, 且进正则会触发
+// V8 编译上限直接抛错(150KB 值实测炸穿管线)。
+const midResp = '{"d":{"v":"CHAIN-VALUE-OK","pad":"' + "x".repeat(150000) + '"}}';
+const midEntries = [
+  mk("mg0", "POST", "https://host/api/mid", { response: midResp }),
+  mk("mg1", "POST", "https://host/api/use", { body: '{"v":"CHAIN-VALUE-OK","pad":"' + "x".repeat(150000) + '"}' }),
+];
+const midChain = autoDetectChain(midEntries);
+assert(midChain.length >= 1, `150KB response 正常建链(上限对齐录制截断, 实得 ${midChain.length})`);
+assert(midChain.every((c) => !c.fromJsonPath.includes("pad")), "超长叶子值(pad 150KB)不入链(防 V8 正则上限)");
+const hugeResp = '{"d":{"v":"' + "x".repeat(200001) + '"}}';
 const hugeEntries = [
   mk("hg0", "POST", "https://host/api/huge", { response: hugeResp }),
-  mk("hg1", "POST", "https://host/api/use", { body: '{"v":"' + "x".repeat(100001) + '"}' }),
+  mk("hg1", "POST", "https://host/api/use", { body: '{"v":"' + "x".repeat(200001) + '"}' }),
 ];
 const hugeChain = autoDetectChain(hugeEntries);
-assert(hugeChain.length === 0, `超大 response(>100KB) 跳过(实得 ${hugeChain.length})`);
+assert(hugeChain.length === 0, `超大 response(>200KB) 跳过(实得 ${hugeChain.length})`);
+
+// --- 场景15: 纯数字单号建链(v1.0.96: >=8 位纯数字放行, 与 correlate 单号识别同口径) ---
+// 65 开头 13 位单号: 数字类型响应叶子 + 裸值 body(无引号) —— 此前双重建不上。
+const numEntries = [
+  mk("o0", "POST", "https://host/order/create", { response: '{"resultCode":"0","data":{"orderNo":6512345678901}}' }),
+  mk("o1", "POST", "https://host/order/submit", { body: '{"orderNo":6512345678901}' }),
+];
+const numChain = autoDetectChain(numEntries);
+assert(numChain.length >= 1, `纯数字单号(65 开头 13 位)检测到关联(实得 ${numChain.length})`);
+const numLink = numChain.find((c) => c.toParam === "body.orderNo");
+assert(!!numLink, "裸值 body 的 orderNo 建链(无引号形态)");
+assert(numLink && numLink.value === "6512345678901", "链携带录制值 value(供值锚定替换): " + numLink?.value);
+
+// --- 场景16: 表单体 k=v 建链(v1.0.96: 检测端补表单扫描, 与替换端表单分支对齐) ---
+const formEntries = [
+  mk("f0", "POST", "https://host/api/login", { response: '{"data":{"token":"tok-abc-123-xyz"}}' }),
+  mk("f1", "POST", "https://host/api/submit", { body: "token=tok-abc-123-xyz&page=1" }),
+];
+const formChain = autoDetectChain(formEntries);
+const formLink = formChain.find((c) => c.toParam === "body.token");
+assert(!!formLink, `表单体 k=v 关联检测到(实得 ${formChain.length}): ` + JSON.stringify(formChain.map((c) => c.toParam)));
+
+// --- 场景17: 短纯数字仍不建链(页码/计数类噪音, <8 位) ---
+const shortEntries = [
+  mk("p0", "GET", "https://host/api/list", { response: '{"data":{"total":123456,"flag":"1"}}' }),
+  mk("p1", "GET", "https://host/api/page", { body: '{"total":123456}' }),
+];
+assert(autoDetectChain(shortEntries).length === 0, "6 位计数类数字不建链(长度阈值挡住)");
+
+// --- 场景18: mergeChain 键归一(v1.0.96): corr 链裸叶名与轻量链 body.前缀同关联去重 ---
+const corrLike = [{ from: 0, fromId: "a", fromJsonPath: "data.x", to: 1, toId: "b", toParam: "x", var: "V_x" }];
+const autoLike = [{ from: 0, fromId: "a", fromJsonPath: "data.x", to: 1, toId: "b", toParam: "body.x", var: "V_x" }];
+const dedupMerged = mergeChain(autoLike, corrLike);
+assert(dedupMerged.length === 1, `同关联不同 toParam 写法(x vs body.x)去重(实得 ${dedupMerged.length})`);
+
+// --- 场景19: 值锚定替换(v1.0.96): 同名异值字段, 链 value 精确定位不换错位 ---
+const anchorEntries = [
+  mk("an0", "POST", "https://host/api/create", { response: '{"data":{"id":"ID-AAA"}}' }),
+  mk("an1", "POST", "https://host/api/use", { body: '{"item":{"id":"ID-BBB"},"ref":{"id":"ID-AAA"}}' }),
+];
+const anchorChain = autoDetectChain(anchorEntries);
+assert(anchorChain.length === 1, `同名异值 id 只链录制值命中的那处(实得 ${anchorChain.length})`);
+const anchored = applyAiChainToJmx(anchorEntries.map((e) => ({ ...e })), anchorChain);
+assert(anchored[1].body.includes('"id":"ID-BBB"'), "未关联的同名字段保持原值: " + anchored[1].body);
+assert(anchored[1].body.includes("${" + anchorChain[0].var + "}"), "录制值命中的那处被参数化(值锚定)");
 
 console.log("\n=== 轻量自动关联检测 PASS ===");

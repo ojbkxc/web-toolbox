@@ -199,6 +199,7 @@ function applyDynamics(bodyText, dynamics) {
       : Array.isArray(text.params) ? text.params.map((p) => `${p.name}=${p.value ?? ""}`).join("&")
       : "";
   }
+  const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const d of dynamics) {
     if (!d.replace) continue;
     // Q_ 前缀 = query 参数动态 —— body 替换端只处理 body 动态(query 走 applyDynamicsToQuery),
@@ -208,17 +209,16 @@ function applyDynamics(bodyText, dynamics) {
     // 表单体分支: k=v 精确替换(与 JSON 分支互斥 —— 表单 diff 出的 path 必是单段键名)
     if (isFormBody(text)) {
       for (const v of d.values) {
-        // 空串值跳过: split(leaf+'=') 的分隔符退化成 'ts=' —— 'ts=&x=' 被整体替换、
-        // 'counts='(含 'ts=' 子串)也被误伤。且空串语义本该保持(空字段发空是对的,
-        // 替换成 ${__time()} 反而错)。
+        // 空串值跳过: 空字段发空是对的, 替换成 ${__time()} 反而错。
         if (v === "") continue;
-        text = text.split(leaf + "=" + v).join(leaf + "=" + d.replace);
+        // 参数边界锚定替换(v1.0.96): split/join 形态会误伤前缀撞名参数(id= 命中 uid=
+        // 的子串)与前缀值(ts=5 命中 ts=55 的前半); (^|&) 与 (?=&|$) 把替换限定在完整参数
+        text = text.replace(new RegExp(`(^|&)${esc(leaf)}=${esc(v)}(?=&|$)`), (_m, p1) => `${p1}${leaf}=${d.replace}`);
       }
       continue;
     }
     for (const v of d.values) {
-      // 空串值跳过: inner='' 让正则退化成 0 宽匹配(`"ts"\s*:\s*("|)\1`),
-      // 对 `"ts": ` 后任意位置叠加替换 → 前一轮结果被再叠一次(JSON 直接损坏)。
+      // 空串值跳过: 空串让正则退化成 0 宽匹配, 对 `"ts": ` 后任意位置叠加替换(JSON 直接损坏)。
       if (v === "") continue;
       const raw = JSON.stringify(v);          // "带引号" 形式
       // 字符串值: 匹配 "leaf": "v" 或数字值: 匹配 "leaf": 123
@@ -226,7 +226,9 @@ function applyDynamics(bodyText, dynamics) {
         ? [raw.slice(1, -1) /* 引号里的内容 */]
         : [String(v)];
       for (const inner of variants) {
-        const pat = `"${leaf}"\\s*:\\s*("|)${inner.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\1`;
+        // 值终点锚(v1.0.96): 动态值互为前缀时(values 含 123 与 123456)无锚正则匹配
+        // 123456 的前半, 产物 "${__time()}456" 直接损坏 JSON; 锚到值界(, } ] 空白/尾)才替换
+        const pat = `"${esc(leaf)}"\\s*:\\s*("|)${esc(inner)}\\1(?=[,}\\]\\s]|$)`;
         const re = new RegExp(pat, "g");
         text = text.replace(re, `"${leaf}": ${JSON.stringify(d.replace)}`);
       }
@@ -238,15 +240,17 @@ function applyDynamics(bodyText, dynamics) {
 // 对 URL query 里的动态值做同样处理(常见: ?ts=123&page=1)
 function applyDynamicsToQuery(query, dynamics) {
   let q = query;
+  const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const d of dynamics) {
     if (!d.replace) continue;
     // Q_ 前缀 = query 参数动态(analyzeCorrelation 的 query diff 命名空间), 实际替换键是剥前缀后的键名
     const leaf = d.path.split(".").pop().replace(/^Q_/, "");
     for (const v of d.values) {
-      // 空串值跳过: 与表单分支同款 —— 分隔符退化成 'ts=' 会误伤 'counts=' 这类
-      // 含 'ts=' 子串的参数, 且空值 query 参数本该保持空。
+      // 空串值跳过: 空值 query 参数本该保持空。
       if (v === "") continue;
-      q = q.split(leaf + "=" + v).join(leaf + "=" + d.replace);
+      // 参数边界锚定(v1.0.96): split/join 会误伤前缀撞名参数(id= 命中 uid= 的子串)与
+      // 前缀值(id=100 命中 uid=1001 内部); (^|[?&]) 兼容带 ? 前缀的 query 串, (?=&|$) 锚到参数尾
+      q = q.replace(new RegExp(`(^|[?&])${esc(leaf)}=${esc(v)}(?=&|$)`), (_m, p1) => `${p1}${leaf}=${d.replace}`);
     }
   }
   return q;
@@ -319,13 +323,15 @@ function linkSeqDynamics(entries, corrResult, usedVars) {
       if (ti == null || ti < 0) continue;
       for (const d of g.dynamics) {
         if (d.classify && d.classify.kind === "timestamp") continue;
-        // Q_ 前缀 = query 参数动态: 取值在 query 不在 body, jsonPathGet(body) 取不到本就跳过;
-        // 显式 continue 是纵深防御 —— 防未来 body 取值路径变化后误把 query 动态挂成 body 链
-        // (query 溯源需上游响应 + url. 形态 toParam, 那是 AI 链的能力域, corr 合成链只做 body)
-        if (/^Q_/.test(d.path)) continue;
-        const leaf = String(d.path).split(".").pop();
-        const val = jsonPathGet(t.body || "", d.path);
-        if (val == null) continue;
+        // Q_ 前缀 = query 参数动态(v1.0.96 起溯源): 取值在 query(URLSearchParams 键取),
+        // 溯源命中后 toParam 用 "url."+键 —— 与 AI 链/应用端(applyAiChainToJmx/aic/PY)的
+        // header./url./body 三形态对齐, 下游 url 分支自动承接。query 键可能含点,
+        // 用 slice(2) 剥前缀(不按 "." 切段, query diff 的路径是完整键名)
+        const isQ = /^Q_/.test(d.path);
+        const leaf = isQ ? String(d.path).slice(2) : String(d.path).split(".").pop();
+        const val = isQ ? new URLSearchParams(String(t.query || "").replace(/^\?/, "")).get(leaf)
+          : jsonPathGet(t.body || "", d.path);
+        if (val == null || val === "") continue;
         // 从最近的上游往前找: 取离目标最近的一个命中(业务上最近的产出者最可能是源)
         for (let si = ti - 1; si >= 0; si--) {
           const cands = leavesOf(si).filter((l) => l.value === val);
@@ -334,7 +340,7 @@ function linkSeqDynamics(entries, corrResult, usedVars) {
           const best = byLeaf.length ? byLeaf[0] : (cands.length === 1 ? cands[0] : null);
           if (!best) continue; // 同值多路径且无同名叶 → 溯源不确定, 放弃(宁可不链)
           links.push({ from: si, fromId: entries[si].id, fromJsonPath: best.path,
-            to: ti, toId: t.id, toParam: leaf, var: mkVar(leaf), value: val, origin: "corr" });
+            to: ti, toId: t.id, toParam: isQ ? "url." + leaf : leaf, var: mkVar(leaf), value: val, origin: "corr" });
           break;
         }
       }

@@ -71,6 +71,18 @@ ok(r9==='?ts=${__time()}&counts=5','applyDynamicsToQuery: 空串值不误伤 cou
 const r10=vm.runInContext('applyDynamics(\'{"ts":"","x":2}\', [{path:"ts",values:["1730000000000",""],replace:"${__time()}"}])',sandbox);
 ok(r10==='{"ts":"","x":2}','applyDynamics: 空串字段保持空语义(不被 ${__time()} 替换): '+JSON.stringify(r10));
 
+// 参数边界锚定(v1.0.96): split/join 与无锚正则会误伤前缀撞名参数(id=/uid=)与
+// 前缀值(123 是 123456 的前半) —— 替换后 body/query 损坏且无从归因。
+const r11=vm.runInContext('applyDynamics(\'{"ts":123456}\', [{path:"ts",values:["123","123456"],replace:"${V}"}])',sandbox);
+ok(r11==='{"ts": "${V}"}','applyDynamics JSON: 动态值互为前缀(123/123456)不撕裂值(终点锚): '+JSON.stringify(r11));
+try{JSON.parse(r11);ok(true,'前缀值替换后 body 仍可 JSON.parse');}catch(e){ok(false,'前缀值替换后 body 仍可 JSON.parse: '+e.message);}
+const r12=vm.runInContext('applyDynamics(\'{"id":123,"uid":123456}\', [{path:"id",values:["123","999"],replace:"${V}"}])',sandbox);
+ok(r12==='{"id": "${V}","uid":123456}','applyDynamics JSON: id 裸值替换不误伤 uid: '+JSON.stringify(r12));
+const r13=vm.runInContext('applyDynamicsToQuery("uid=1001&id=100", [{path:"Q_id",values:["100","1001"],replace:"${V}"}])',sandbox);
+ok(r13==='uid=1001&id=${V}','applyDynamicsToQuery: id= 不误伤 uid=1001 的子串(参数边界锚): '+JSON.stringify(r13));
+const r14=vm.runInContext('applyDynamics(\'uid=1001&id=100&x=2\', [{path:"id",values:["100","1001"],replace:"${V}"}])',sandbox);
+ok(r14==='uid=1001&id=${V}&x=2','applyDynamics 表单: id= 不误伤 uid= 的子串(参数边界锚): '+JSON.stringify(r14));
+
 // escHtml: 对象走 String() → [object Object](展示层降级但不炸)
 const r5=vm.runInContext('escHtml(__obj.body)',sandbox);
 ok(r5==='[object Object]','escHtml: 对象降级为 [object Object] 不炸');

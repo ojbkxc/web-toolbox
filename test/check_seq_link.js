@@ -8,6 +8,7 @@
 //   7. 合成链经 applyAiChainToJmx 挂 JSONPostProcessor + ${var} 替换
 //   8. 合成链经 buildPyScript 生成 pick 提取 + re.sub 注入(与 AI 链同语义)
 //   9. showCorrelation 集成: 有 aiChain 时 concat 不覆盖 AI 链
+//   10. query 动态溯源(v1.0.96): Q_ 前缀不再断档, toParam=url.键, JMX url 分支承接
 const fs = require("fs");
 const ROOT = require('path').resolve(__dirname, '..');
 const vm = require("vm");
@@ -141,7 +142,26 @@ const mkEntries = () => ([
   ok("PY: submit 步骤 re.sub 注入", /re\.sub/.test(script), "");
 }
 
-// ---- 8. showCorrelation 集成(vm realm, aiChain 不被覆盖) ----
+// ---- 9. query 动态溯源(v1.0.96): Q_ 前缀不再断档, toParam=url.键, JMX url 分支承接 ----
+{
+  const entries = [
+    { id: "w0", method: "POST", url: "https://h.com/auth", path: "/auth", query: "", headers: {}, body: "{}", status: 200,
+      response: '{"data":{"code":"AB12"}}', ts: "" },
+    { id: "w1", method: "GET", url: "https://h.com/w", path: "/w", query: "code=AB12&page=1", headers: {}, body: "", status: 200, response: "", ts: "" },
+    { id: "w2", method: "GET", url: "https://h.com/w", path: "/w", query: "code=CD34&page=1", headers: {}, body: "", status: 200, response: "", ts: "" },
+  ];
+  const corr = ctx.analyzeCorrelation(entries);
+  ok("query diff 出 Q_code 动态", corr.groups.some((g) => g.dynamics.some((d) => d.path === "Q_code")), corr.groups);
+  const links = ctx.linkSeqDynamics(entries, corr, []);
+  ok("query 动态溯源到上游响应(仅录制值命中的 w1, w2 的 CD34 无源不链)", links.length === 1, links);
+  ok("toParam=url.code 形态(应用端 url 分支承接)", links[0] && links[0].toParam === "url.code", links[0] && links[0].toParam);
+  ok("value 快照录制值", links[0] && links[0].value === "AB12", links[0] && links[0].value);
+  const out = ctx.applyAiChainToJmx(entries, links);
+  ok("JMX: query 参数化 ${var}", out[1].query.includes("${" + links[0].var + "}"), out[1].query);
+  ok("JMX: auth 挂 JSONPath 提取器($.data.code)", (out[0]._extractors || []).some((x) => x.expr === "$.data.code"), out[0]._extractors);
+}
+
+// ---- 10. showCorrelation 集成(vm realm, aiChain 不被覆盖) ----
 (async () => {
   const html = fs.readFileSync(ROOT + "/sidepanel/sidepanel.html", "utf8");
   const all = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]).map((p) => path.resolve(ROOT + "/sidepanel", p));

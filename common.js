@@ -98,11 +98,17 @@ function collectCsvData(entries, chain) {
       }
     } else {
       // JSON body: "leaf": "value"(链替换端只改 body 叶子, 值与录制同形)
-      let m = new RegExp(`"${esc(leaf)}"\\s*:\\s*"([^"]*)"`).exec(to.body || "");
-      if (m) val = m[1];
+      // 值锚定优先(v1.0.96, 链带录制值): 同名异值字段取错列默认值/裸值形态取不到, 先按值定位
+      let m = null;
+      if (c.value != null) m = new RegExp(`"${esc(leaf)}"\\s*:\\s*("|)${esc(c.value)}\\1(?=[,}\\]\\s]|$)`).exec(to.body || "");
+      if (m) val = c.value;
       else {
-        m = new RegExp(`(^|&)${esc(leaf)}=([^&]*)`).exec(to.body || "");
-        if (m) val = m[2];
+        m = new RegExp(`"${esc(leaf)}"\\s*:\\s*"([^"]*)"`).exec(to.body || "");
+        if (m) val = m[1];
+        else {
+          m = new RegExp(`(^|&)${esc(leaf)}=([^&]*)`).exec(to.body || "");
+          if (m) val = m[2];
+        }
       }
     }
     // 防御: 取值若已是 ${var} 形态(调用方误传了 applyAiChainToJmx 替换后的 entries),
@@ -446,7 +452,13 @@ function applyAiChainToJmx(entries, chain) {
         const le = esc(leaf);
         // JSON body: "leaf": "..." / 裸值 → ${var}(带引号, JMeter 函数返回字符串)
         let hit = false;
-        to.body = (to.body || "").replace(new RegExp(`"${le}"\\s*:\\s*"[^"]*"`), () => { hit = true; return `"${leaf}": "\${${c.var}}"`; });
+        // 值锚定优先(v1.0.96, 链带录制值): 同名异值字段(两个不同 id)按名首匹配会换错
+        // 位置, 先替换"录制值出现的那处"(终点锚防前缀值误配), miss 再按名首匹配兜底
+        if (c.value != null && to.body) {
+          const ve = esc(c.value);
+          to.body = to.body.replace(new RegExp(`"${le}"\\s*:\\s*("|)${ve}\\1(?=[,}\\]\\s]|$)`), () => { hit = true; return `"${leaf}": "\${${c.var}}"`; });
+        }
+        if (!hit) to.body = (to.body || "").replace(new RegExp(`"${le}"\\s*:\\s*"[^"]*"`), () => { hit = true; return `"${leaf}": "\${${c.var}}"`; });
         if (!hit) to.body = to.body.replace(new RegExp(`"${le}"\\s*:\\s*[0-9A-Za-z_.-]+`), () => { hit = true; return `"${leaf}": "\${${c.var}}"`; });
         // 表单体 k=v / query 参数: 用函数式替换防 $& 展开
         if (!hit) to.body = to.body.replace(new RegExp(`(^|&)${le}=[^&]*`), (_m, p1) => { hit = true; return `${p1}${leaf}=\${${c.var}}`; });
@@ -487,7 +499,13 @@ function autoDetectChain(entries) {
         const sv = String(v);
         // M4: 值长度阈值 — ASCII 值 >= 6(减少误匹配), 含中文/Unicode 值 >= 4(信息密度高)
         const minLen = /[^\x00-\x7f]/.test(sv) ? 4 : 6;
-        if (sv.length >= minLen && !BL.has(sv.toLowerCase()) && !/^\d+$/.test(sv)) out.push({ path: p, value: sv });
+        // 纯数字值 >= 8 位才作链源(v1.0.96): 单号/ID 是常见形态, 与 correlate.classifyDynamic
+        // 的单号识别同口径(65 开头 13 位单号单遍录制即可建链); 页码/计数类短数字仍被
+        // minLen + 本阈值挡住, 防 "page=1" 式噪音误配
+        const numOk = !/^\d+$/.test(sv) || sv.length >= 8;
+        // 叶子值超长(>500)不入链: base64/大文本无业务关联意义, 且超长值进正则会触发
+        // V8 编译上限直接抛错(150KB 值实测炸穿管线) —— 宁可不链也不炸
+        if (sv.length >= minLen && sv.length <= 500 && numOk && !BL.has(sv.toLowerCase())) out.push({ path: p, value: sv });
       } else if (typeof v === "object") {
         extractLeaves(v, p, depth + 1, out);
       }
@@ -498,15 +516,29 @@ function autoDetectChain(entries) {
     if (!text || typeof text !== "string") return;
     let m; const re = /<(\w+)>([^<]{6,100})<\/\1>/g;
     while ((m = re.exec(text)) !== null && out.length < MAX_LEAVES) {
-      if (!BL.has(m[2].toLowerCase()) && !/^\d+$/.test(m[2])) out.push({ path: m[1], value: m[2] });
+      const numOk = !/^\d+$/.test(m[2]) || m[2].length >= 8; // 与 extractLeaves 同口径
+      if (numOk && !BL.has(m[2].toLowerCase())) out.push({ path: m[1], value: m[2] });
     }
+  };
+  // 命中入链(三处扫描共用): 同 to 同参数去重、变量名按叶子名错开; value 快照录制值,
+  // 供下游(applyAiChainToJmx/aic.inject/collectCsvData)值锚定精确定位同名异值字段
+  const push = (i, from, j, to, path, tp, value) => {
+    const tk = j + ":" + tp;
+    if (usedTargets.has(tk)) return;
+    usedTargets.add(tk);
+    const leaf = path.split(".").pop();
+    let vn = "V_" + leaf, n = 2;
+    while (usedVars.has(vn)) { vn = "V_" + leaf + "_" + n++; }
+    usedVars.add(vn);
+    chain.push({ from: i, fromId: from.id, fromJsonPath: path, to: j, toId: to.id, toParam: tp, var: vn, value });
   };
   for (let i = 0; i < entries.length; i++) {
     const from = entries[i];
     if (!from.response) continue;
-    // M5: 超大 response 跳过(>100KB), 200KB 的 JSON parse + 递归开销显著
+    // M5: 超大 response 跳过 —— 上限与录制截断(background 200KB)对齐(v1.0.96): 录得到的
+    // 就链得上, 此前 100~200KB 的大查询响应录了但静默不链; MAX_LEAVES 兜底防递归爆炸
     const rt = from.response;
-    if (rt.length > 100000) continue;
+    if (rt.length > 200000) continue;
     const leaves = [];
     let resp; try { resp = JSON.parse(rt); } catch {
       // H6: 非 JSON 响应用正则提取
@@ -518,49 +550,30 @@ function autoDetectChain(entries) {
       const ev = esc(value);
       for (let j = i + 1; j < entries.length; j++) {
         const to = entries[j];
-        // JSON body: "fieldName": "value" → toParam = body.fieldName
+        // JSON body: "fieldName": "value"(带引号)→ toParam = body.fieldName
         if (to.body) {
-          let m; const re = new RegExp('"([^"]+)"\\s*:\\s*"' + ev + '"', "g");
-          while ((m = re.exec(to.body)) !== null) {
-            const tp = "body." + m[1];
-            const tk = j + ":" + tp;
-            if (usedTargets.has(tk)) continue;
-            usedTargets.add(tk);
-            const leaf = path.split(".").pop();
-            let vn = "V_" + leaf, n = 2;
-            while (usedVars.has(vn)) { vn = "V_" + leaf + "_" + n++; }
-            usedVars.add(vn);
-            chain.push({ from: i, fromId: from.id, fromJsonPath: path, to: j, toId: to.id, toParam: tp, var: vn });
+          let m;
+          const re = new RegExp('"([^"]+)"\\s*:\\s*"' + ev + '"', "g");
+          while ((m = re.exec(to.body)) !== null) push(i, from, j, to, path, "body." + m[1], value);
+          // 裸值 JSON("key": 12345 无引号, v1.0.96): 数字型单号/ID 常以裸值进 body;
+          // 值终点锚(, } ] 空白/尾)防前缀值误配(123 不命中 123456 的前半)
+          const reBare = new RegExp('"([^"]+)"\\s*:\\s*' + ev + '(?=[,}\\]\\s]|$)', "g");
+          while ((m = reBare.exec(to.body)) !== null) push(i, from, j, to, path, "body." + m[1], value);
+          // 表单体 k=v&k2=v2(v1.0.96): 内网老系统大量表单 POST, 替换端(aic/applyAiChainToJmx)
+          // 均有表单分支而检测端此前不扫 = 建不上链; body 含 JSON 特征字符时不扫(防误撞)
+          if (!/[{[]/.test(to.body)) {
+            const reForm = new RegExp("(^|&)([^=&]+)=" + ev + "(?=&|$)", "g");
+            while ((m = reForm.exec(to.body)) !== null) push(i, from, j, to, path, "body." + m[2], value);
           }
         }
         // URL query: paramName=value → toParam = url.paramName
         const ut = (to.url || "") + (to.query ? "?" + to.query : "");
         let m; const ure = new RegExp("([?&])([^=&]+)=" + ev + "(?=&|$)", "g");
-        while ((m = ure.exec(ut)) !== null) {
-          const tp = "url." + m[2];
-          const tk = j + ":" + tp;
-          if (usedTargets.has(tk)) continue;
-          usedTargets.add(tk);
-          const leaf = path.split(".").pop();
-          let vn = "V_" + leaf, n = 2;
-          while (usedVars.has(vn)) { vn = "V_" + leaf + "_" + n++; }
-          usedVars.add(vn);
-          chain.push({ from: i, fromId: from.id, fromJsonPath: path, to: j, toId: to.id, toParam: tp, var: vn });
-        }
+        while ((m = ure.exec(ut)) !== null) push(i, from, j, to, path, "url." + m[2], value);
         // H5: header 关联: headerName: value → toParam = header.headerName
         if (to.headers) {
           for (const [hk, hv] of Object.entries(to.headers)) {
-            if (String(hv) === value) {
-              const tp = "header." + hk;
-              const tk = j + ":" + tp;
-              if (usedTargets.has(tk)) continue;
-              usedTargets.add(tk);
-              const leaf = path.split(".").pop();
-              let vn = "V_" + leaf, n = 2;
-              while (usedVars.has(vn)) { vn = "V_" + leaf + "_" + n++; }
-              usedVars.add(vn);
-              chain.push({ from: i, fromId: from.id, fromJsonPath: path, to: j, toId: to.id, toParam: tp, var: vn });
-            }
+            if (String(hv) === value) push(i, from, j, to, path, "header." + hk, value);
           }
         }
       }
@@ -571,15 +584,18 @@ function autoDetectChain(entries) {
 
 // 合并轻量链和 AI 链(v1.0.84): AI 优先, 轻量补充 AI 没检到的关联。
 // 键 = fromId→toId:toParam, AI 已有的关联轻量不重复加。
+// toParam 的 "body." 前缀在键里归一(v1.0.96): corr 合成链用裸叶名、轻量链用 body.叶名,
+// 同一关联两种写法不去重 → 双提取器+二次替换(V_x 被 V_x_auto 覆盖); url./header. 保留区分。
 // H4(v1.0.86): 轻量链中与 AI 链同名的变量加 _auto 后缀, 防 JMeter 后挂覆盖先挂。
 function mergeChain(autoChain, aiChain) {
   const ai = Array.isArray(aiChain) ? aiChain : [];
   const auto = Array.isArray(autoChain) ? autoChain : [];
   if (!auto.length) return ai;
   if (!ai.length) return auto;
-  const aiKeys = new Set(ai.map((c) => (c.fromId ?? c.from) + "->" + (c.toId ?? c.to) + ":" + c.toParam));
+  const keyOf = (c) => (c.fromId ?? c.from) + "->" + (c.toId ?? c.to) + ":" + String(c.toParam || "").replace(/^body\./i, "");
+  const aiKeys = new Set(ai.map(keyOf));
   const aiVars = new Set(ai.map((c) => c.var));
-  const autoOnly = auto.filter((c) => !aiKeys.has((c.fromId ?? c.from) + "->" + (c.toId ?? c.to) + ":" + c.toParam));
+  const autoOnly = auto.filter((c) => !aiKeys.has(keyOf(c)));
   const renamed = autoOnly.map((c) => aiVars.has(c.var) ? { ...c, var: c.var + "_auto" } : c);
   return [...ai, ...renamed];
 }
