@@ -194,14 +194,18 @@ function assert(cond, name) {
     ]});
     const sp = makeSandbox();
     await vm.runInContext("loadHarvest()", sp.sb);
-    // 4g. 进勾选模式勾 s1+r1, 清洗删 s1 → pickIds 死 id 同清(此前残留 → 计数虚高)
+    // 4g(v1.0.96 语义): 勾选模式勾 s1+r1 点清洗 → 删除勾选的两条(不再是噪音清洗)
     vm.runInContext("togglePickMode(); togglePick('s1'); togglePick('r1')", sp.sb);
+    assert(sp.elements.get("btnClean").textContent === "✂ 删除勾选 2", "4g0 勾选后清洗按钮变身删除勾选 2: " + sp.elements.get("btnClean").textContent);
     await vm.runInContext("cleanVisible()", sp.sb);
+    assert(vm.runInContext("entries.map(e=>e.id).join(',')", sp.sb) === "r2", "4g 删除勾选 s1+r1, 保留 r2: " + vm.runInContext("entries.map(e=>e.id).join(',')", sp.sb));
     const picked = vm.runInContext("[...pickIds]", sp.sb);
-    assert(!picked.includes("s1") && picked.includes("r1"), "4g 清洗后 pickIds 死 id 不残留: " + JSON.stringify(picked));
-    // 4h. 勾选集持久化(重开侧栏不丢)
-    const pk = storageData.get("toolbox.pickIds");
-    assert(Array.isArray(pk) && pk.includes("r1") && !pk.includes("s1"), "4h 勾选集持久化到 storage: " + JSON.stringify(pk));
+    assert(picked.length === 0, "4g2 删除后 pickIds 同清(死 id 不残留): " + JSON.stringify(picked));
+    assert(sp.elements.get("btnClean").textContent === "✂ 清洗", "4g3 删完按钮回噪音清洗文案: " + sp.elements.get("btnClean").textContent);
+    const gmsg = sp.elements.get("chainMsg").textContent || "";
+    assert(gmsg.includes("已删除勾选 2 条"), "4g4 状态明示删除勾选条数: " + gmsg);
+    // 4h. 勾选模式内删除后持久键为空集(无死 id 残留; 退出模式才 remove 键)
+    assert(JSON.stringify(storageData.get("toolbox.pickIds")) === "[]", "4h 勾选模式内空集持久化为[](死 id 不残留): " + JSON.stringify(storageData.get("toolbox.pickIds")));
     // 4i. 有数据未选中 → 详情区渲染摘要(不再"点一条请求"空态)
     vm.runInContext("selectedId = null; renderDetail()", sp.sb);
     const dh = sp.elements.get("detail").innerHTML;
@@ -215,12 +219,13 @@ function assert(cond, name) {
     assert(msg.includes("可见集为空"), "4k 空可见集全选明示(不走误导性全清分支): " + msg);
     vm.runInContext("setFilter('')", sp.sb);
     // 4m. 重开侧栏(loadHarvest)恢复勾选模式与勾选集(新 realm + 共享 storageData)
-    vm.runInContext("togglePickAll(); togglePick('r2')", sp.sb); // 全选 r1+r2 后退 r2 → 只剩 r1
-    assert(vm.runInContext("[...pickIds].join(',')", sp.sb) === "r1", "4m-pre 勾选集只 r1: " + vm.runInContext("[...pickIds]", sp.sb));
+    // r1 已被 4g 删除, 全选只勾 r2(不再退选 —— 恢复链路要留活勾)
+    vm.runInContext("togglePickAll()", sp.sb);
+    assert(vm.runInContext("[...pickIds].join(',')", sp.sb) === "r2", "4m-pre 勾选集只 r2: " + vm.runInContext("[...pickIds]", sp.sb));
     const sp2 = makeSandbox();
     await vm.runInContext("loadHarvest()", sp2.sb);
-    assert(vm.runInContext("pickMode && pickIds.has('r1')", sp2.sb) === true, "4m 重开侧栏勾选模式+勾选集恢复(r1)");
-    assert(vm.runInContext("exportSet().map(e=>e.id).join(',')", sp2.sb) === "r1", "4m2 恢复后导出集只含勾选条");
+    assert(vm.runInContext("pickMode && pickIds.has('r2')", sp2.sb) === true, "4m 重开侧栏勾选模式+勾选集恢复(r2)");
+    assert(vm.runInContext("exportSet().map(e=>e.id).join(',')", sp2.sb) === "r2", "4m2 恢复后导出集只含勾选条");
   }
 
   // ---- 场景 4n(v1.0.82): 清洗同时去重「method+path+query+body 完全相同」的请求 ----
@@ -251,7 +256,8 @@ function assert(cond, name) {
     const sp2 = makeSandbox();
     await vm.runInContext("loadHarvest()", sp2.sb);
     vm.runInContext("togglePickMode(); togglePick('d2'); cleanVisible()", sp2.sb);
-    assert(vm.runInContext("[...pickIds].join(',')", sp2.sb) === "", "4n3 去重后 pickIds 死 id 同清");
+    assert(vm.runInContext("entries.map(e=>e.id).join(',')", sp2.sb) === "d1", "4n3 勾选删除 d2(勾了点剪刀=删勾选), 保留 d1: " + vm.runInContext("entries.map(e=>e.id).join(',')", sp2.sb));
+    assert(vm.runInContext("[...pickIds].join(',')", sp2.sb) === "", "4n3b 删除后 pickIds 死 id 同清");
     // 不同 method 不算重复: GET 与 POST 同名同 body 都保留
     storageData.clear();
     storageData.set("toolbox.harvest", { v: 1, entries: [
@@ -262,6 +268,41 @@ function assert(cond, name) {
     await vm.runInContext("loadHarvest()", sp3.sb);
     await vm.runInContext("cleanVisible()", sp3.sb);
     assert(vm.runInContext("entries.length", sp3.sb) === 2, "4n4 GET/POST 同 path 不算重复, 都保留");
+  }
+
+  // ---- 场景 4p(v1.0.96): 勾选删除完整链路 —— confirm 取消零删除/选中补选/AI 链失效 ----
+  {
+    storageData.clear();
+    storageData.set("toolbox.harvest", { v: 1, entries: [
+      { id: "e1", method: "POST", url: "https://ktki.example.com/web/a", path: "/web/a", query: "", headers: {}, body: "{}", status: 200, response: "{}", mime: "json", ts: "", durationMs: 1 },
+      { id: "e2", method: "GET", url: "https://ktki.example.com/web/b", path: "/web/b", query: "", headers: {}, body: "", status: 200, response: "{}", mime: "json", ts: "", durationMs: 2 },
+      { id: "e3", method: "GET", url: "https://ktki.example.com/web/app.js", path: "/web/app.js", query: "", headers: {}, body: "", status: 200, response: "", mime: "text/javascript", ts: "", durationMs: 3 },
+      { id: "e4", method: "POST", url: "https://ktki.example.com/web/d", path: "/web/d", query: "", headers: {}, body: "{}", status: 200, response: "{}", mime: "json", ts: "", durationMs: 4 },
+    ]});
+    // 预置 AI 链(锚定 e1): e1 被勾删 → 链必须整体失效(防错位注入)
+    storageData.set("toolbox.aiChain", [{ from: 0, fromId: "e1", fromJsonPath: "token", to: 3, toId: "e4", toParam: "body.x", var: "v_t", value: "D1" }]);
+    const sp = makeSandbox();
+    await vm.runInContext("loadHarvest()", sp.sb);
+    vm.runInContext("select('e1')", sp.sb);
+    vm.runInContext("togglePickMode(); togglePick('e1'); togglePick('e3')", sp.sb);
+    assert(sp.elements.get("btnClean").textContent === "✂ 删除勾选 2", "4p 勾选后按钮变身删除勾选 2: " + sp.elements.get("btnClean").textContent);
+    // confirm 取消: 数据零变化
+    vm.runInContext("confirm = () => false", sp.sb);
+    await vm.runInContext("cleanVisible()", sp.sb);
+    assert(vm.runInContext("entries.length", sp.sb) === 4, "4p2 confirm 取消零删除");
+    vm.runInContext("confirm = () => true", sp.sb);
+    await vm.runInContext("cleanVisible()", sp.sb);
+    assert(vm.runInContext("entries.map(e=>e.id).join(',')", sp.sb) === "e2,e4", "4p3 删除勾选 e1+e3, 保留 e2,e4: " + vm.runInContext("entries.map(e=>e.id).join(',')", sp.sb));
+    assert(vm.runInContext("aiChain", sp.sb) === null, "4p4 AI 链随删除失效(锚定条目被删, 保守清链)");
+    assert(storageData.get("toolbox.aiChain") === undefined, "4p5 storage 侧 AI 链键同清");
+    assert(vm.runInContext("selectedId", sp.sb) === "e2", "4p6 选中条被删就近补选 e2: " + vm.runInContext("selectedId", sp.sb));
+    assert(vm.runInContext("[...pickIds].join(',')", sp.sb) === "", "4p7 勾选集随删除清空");
+    assert(sp.elements.get("btnClean").textContent === "✂ 清洗", "4p8 删完按钮回清洗文案: " + sp.elements.get("btnClean").textContent);
+    const pmsg = sp.elements.get("chainMsg").textContent || "";
+    assert(pmsg.includes("已删除勾选 2 条"), "4p9 状态明示删除勾选条数: " + pmsg);
+    // 4p10 storage 侧数据同步(persistEntries 整表写回): harvest 信封里 e1/e3 已不在
+    const hv = storageData.get("toolbox.harvest");
+    assert(hv && hv.entries.map((e) => e.id).join(",") === "e2,e4", "4p10 storage 整表写回(删勾选真删数据): " + (hv && hv.entries.map((e) => e.id).join(",")));
   }
 
   // ---- 场景 5: cURL 复制内容 ----

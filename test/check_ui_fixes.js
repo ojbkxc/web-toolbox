@@ -70,8 +70,9 @@ assert(toggleCalls2[1][1] === "checked" && toggleCalls2[1][2] === false, "A1: �
 assert(toggleCalls2[2][0] === 1 && toggleCalls2[2][2] === true, "A1: 各卡片独立同步");
 
 // ================= A2 清洗后刷新导出页计数 =================
-const cleanSrc = fnBody(sideJs, "cleanVisible");
-assert(cleanSrc.includes("updatePreludeUi();"), "A2: cleanVisible 尾部调 updatePreludeUi(前置计数同步, 内部连带 updateCsvUi)");
+// v1.0.96 起收尾统一抽到 finalizeRemoval(勾选删除/噪音清洗共用), 断言锚点随之迁移
+const cleanSrc = fnBody(sideJs, "finalizeRemoval");
+assert(cleanSrc.includes("updatePreludeUi();"), "A2: 删除收尾(finalizeRemoval)调 updatePreludeUi(前置计数同步, 内部连带 updateCsvUi)");
 
 // ================= A3 renderList 保留滚动位置 =================
 const renderSrc = fnBody(sideJs, "renderList");
@@ -95,6 +96,7 @@ function runPickMode(confirmRet, mode, ids) {
     confirm: () => { confirmN++; return confirmRet; },
     pickMode: mode, pickIds: new Set(ids),
     persistPickIds() {}, updateScopeHint() {}, updateTrimUi() {}, renderList() {},
+    updateCleanBtn() {}, // v1.0.96: togglePickMode 尾部同步清洗按钮文案(删除勾选 N ↔ 清洗)
   };
   vm.createContext(sb);
   new vm.Script(pickSrc + "\n(function(){ togglePickMode(); this.__out = { mode: pickMode, size: pickIds.size }; })()").runInContext(sb);

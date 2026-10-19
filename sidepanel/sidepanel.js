@@ -200,14 +200,25 @@ function setFilter(q) {
   renderList();
 }
 
-// ---------- 清洗(预检/静态资源/重复) ----------
+// ---------- 清洗(预检/静态资源/重复) / 删除勾选 ----------
 // isSkippable/STATIC_EXT/dedupeIdentical 由 common.js 提供(勿重复声明) —— 与 JMX/PY
 // 导出净化同一套规则 + 完全相同请求去重(v1.0.82): 录制 177 条里 51 次 getByheadAndBodyParam
 // 有 17 次请求完全重复(path/query/body 一字不差), 页面轮询噪音, 压测脚本里是采样器冗余。
-// 清洗: 从 entries 移除可见集里 isSkippable 的条目 + method+path+query+body 完全相同的
-// 重复请求(保留首条); 同步清理关联的前置标记。
+// v1.0.96: 勾选模式且有勾选时, 按钮变身「✂ 删除勾选 N」—— 用户心智"勾了再点剪刀就是
+// 删这些"(此前只能单删或全丢, "删掉我勾的这几条"没有入口); 删全部 = 全选后删除勾选,
+// 或用「🗑 丢弃」。没勾选时保持噪音清洗语义。
 // 删的是真实数据(storage 同步覆盖), 故先 confirm 列明细 —— 不可撤销。
 function cleanVisible() {
+  if (pickMode && pickIds.size) {
+    // 删除勾选分支: 受害者 = 勾选集(引擎淘汰的死 id 由 finalizeRemoval 的 pickIds.delete 天然自清)
+    const delIds = new Set(pickIds);
+    const victims = entries.filter((e) => delIds.has(e.id));
+    const sample = victims.slice(0, 5).map((e) => e.method + " " + e.path).join("\n  ");
+    if (!confirm(`删除勾选的 ${delIds.size} 条?不可撤销。\n  ${sample}${delIds.size > 5 ? "\n  …" : ""}`)) return;
+    finalizeRemoval(delIds);
+    setRecStatus(`✓ 已删除勾选 ${delIds.size} 条`, "ok");
+    return;
+  }
   const vis = visibleEntries();
   const victims = vis.filter(isSkippable);
   const deduped = dedupeIdentical(vis);
@@ -224,16 +235,23 @@ function cleanVisible() {
     }
   }
   const n = delIds.size;
-  if (!n) { setRecStatus("无可清洗条目", "ok"); return; }
+  if (!n) { setRecStatus("无可清洗条目(清洗只删预检/静态资源/重复; 删指定条目请开 ☐ 勾选勾上再点剪刀)", "ok"); return; }
   const sample = victims.slice(0, 5).map((e) => e.method + " " + e.path).join("\n  ");
   const dupNote = dupes ? `\n  · 重复请求 ${dupes} 条(完全相同)已并入` : "";
   if (!confirm(`移除 ${n} 条预检/静态资源${dupes ? `/重复请求` : ""}?不可撤销。\n  ${sample}${n > 5 ? "\n  …" : ""}${dupNote}`)) return;
+  finalizeRemoval(delIds);
+  setRecStatus(`✂ 已移除 ${n} 条可清洗请求(预检/静态资源${dupes ? " + 重复请求" : ""})。`, "ok");
+}
+
+// 勾选删除/噪音清洗共用的删除收尾: 数据整表过滤 + 派生键逐 id 清(#173: 此前只清
+// preludeIds/manualPrelude, pickIds 残留死 id → "✓ 已选 N" 计数虚高、exportSet 语义
+// 漂移, 与 removeOne 的 pickIds.delete 不对称) + 选中条被删就近补选 + AI 链失效
+// (链锚定条目 id, 删后错位注入风险 → 保守清) + 持久化全写回。
+function finalizeRemoval(delIds) {
   const selIdx = entries.findIndex((e) => e.id === selectedId);
   entries = entries.filter((e) => !delIds.has(e.id));
-  // 勾选集同清(#173 复选框全量修复): 此前只清 preludeIds/manualPrelude, pickIds 残留
-  // 死 id → "✓ 已选 N" 计数虚高、exportSet 语义漂移(与 removeOne 的 pickIds.delete 不对称)
   for (const id of delIds) { preludeIds.delete(id); manualPrelude.delete(id); pickIds.delete(id); }
-  if (manualPrelude) persistManualPrelude();
+  persistManualPrelude();
   persistPickIds();
   if (delIds.has(selectedId)) { selectedId = null; ensureSelection(selIdx); updateTrimUi(); }
   // AI 依赖链的 from/to 是旧数组下标 —— 删条目后必错位, 直接失效(避免注入到错接口)
@@ -242,11 +260,23 @@ function cleanVisible() {
     chrome.storage.local.remove("toolbox.aiChain", () => {});
   }
   persistEntries();
-  setRecStatus(`✂ 已移除 ${n} 条可清洗请求(预检/静态资源${dupes ? " + 重复请求" : ""})。`, "ok");
   renderList();
   // 前置标记可能被连带清洗删除 → 导出页"识别到 N 条登录前置"计数须同步
   // (updatePreludeUi 内部连带 updateCsvUi; 此前漏调, 计数陈旧误导导出配置)。
   updatePreludeUi();
+  updateCleanBtn();
+}
+
+// 清洗按钮随勾选态变身: 勾了 N 条 → 「✂ 删除勾选 N」; 没勾 → 噪音清洗语义。
+function updateCleanBtn() {
+  const b = $("btnClean");
+  if (pickMode && pickIds.size) {
+    b.textContent = `✂ 删除勾选 ${pickIds.size}`;
+    b.title = `删除勾选的 ${pickIds.size} 条(不可撤销)`;
+  } else {
+    b.textContent = "✂ 清洗";
+    b.title = "移除可见集里的预检/静态资源/重复请求";
+  }
 }
 $("btnClean").onclick = cleanVisible;
 
@@ -403,6 +433,7 @@ function togglePickMode() {
   $("btnPick").classList.toggle("pri", pickMode);
   $("btnPick").textContent = pickMode ? `✓ 已选 ${pickIds.size}` : "☐ 勾选";
   $("btnPickAll").style.display = pickMode ? "" : "none";
+  updateCleanBtn(); // 进出勾选模式/勾选数变化 → 清洗按钮文案跟随(删除勾选 N ↔ 清洗)
   persistPickIds();
   updateScopeHint();
   updateTrimUi(); // 勾选模式进出会改变"起点是否在导出集内"的判定 → 提示须同步
@@ -427,6 +458,7 @@ function togglePickAll() {
   persistPickIds();
   updateScopeHint();
   updateTrimUi(); // 全选/全清同样改变"起点是否在勾选集内"判定 —— 与 togglePick/togglePickMode 同步
+  updateCleanBtn(); // 全选/全清改变勾选数 → 按钮计数跟随
   renderList();
 }
 function togglePick(id) {
@@ -435,6 +467,7 @@ function togglePick(id) {
   persistPickIds();
   updateScopeHint();
   updateTrimUi(); // 勾/退单条也改变"起点是否在勾选集内"判定 —— 不补这行 trimNote 会陈旧(掩盖于测试手动调 updateTrimUi)
+  updateCleanBtn();
   renderList();
 }
 // 导出/关联/AI 统一入口: 勾选优先, 否则可见集
@@ -751,6 +784,7 @@ function removeOne(e) {
     renderList();
   }
   setRecStatus(`✓ 已删除 1 条`, "ok");
+  updateCleanBtn(); // 单删可能删的是勾选中的条 → 按钮计数同步减
 }
 
 // ---------- 冒烟(页面上下文快速并发验证, 非严肃压测) ----------
@@ -1181,6 +1215,7 @@ async function loadHarvest() {
     $("btnPick").classList.add("pri");
     $("btnPick").textContent = `✓ 已选 ${pickIds.size}`;
     $("btnPickAll").style.display = "";
+    updateCleanBtn(); // 重开恢复勾选集 → 清洗按钮直接呈现"删除勾选 N"
   }
   refreshPrelude();
   renderList();
