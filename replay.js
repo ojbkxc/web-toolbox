@@ -20,10 +20,11 @@ function normalizeForCompare(text) {
         for (const k of Object.keys(v)) o[k] = walk(v[k]);
         return o;
       }
-      // 毫秒/纳秒时间戳 & 超长 token → 模糊化
-      if (typeof v === "number") return (v > 1e10) ? "~num" : v;
+      // 毫秒/纳秒/秒级时间戳 & 超长 token → 模糊化
+      // 秒级(10 位, 1e9~2e9): 2001~2033 年的 unix 秒, 两次录制必不同 → 不归一必 DIFF 误报
+      if (typeof v === "number") return (v >= 1e9) ? "~num" : v;
       if (typeof v === "string") {
-        if (/^\d{13,19}$/.test(v)) return "~ts";
+        if (/^\d{10}$/.test(v) || /^\d{13,19}$/.test(v)) return "~ts";
         if (v.length > 48) return "~long";
       }
       return v;
@@ -137,9 +138,13 @@ function createExecutionLease(opts = {}) {
 // opts.beforeRequest(entry, i, liveResults): 可选, 在发每条请求前改写该条(如 AI 参数注入), 返回改写后的 entry。
 // opts.afterRequest(entry, i, live): 可选, 每条完成后拿到 live 响应(供提取参数链的真实值)。
 // opts.assertFor(entry, i): 可选, 返回该条的业务断言数组(如 AI 生成), 有则用它判定而非文本 diff。
+// opts.keepHeaders: Set(小写头名), 链显式注入的头 —— 浏览器管理头剔除时放行(录制快照里的
+//   authorization 是过期凭据该剔, 链注入的 header.Authorization 是 live 活值该留; 不放行
+//   则 Bearer 系统的链静默失效且回执谎报 applied)。
 function runChain(entries, tabId, opts) {
   const { onProgress, beforeRequest, afterRequest, assertFor } = opts || {};
   const lease = opts.lease || createExecutionLease(opts);
+  const keep = (opts && opts.keepHeaders instanceof Set) ? opts.keepHeaders : null;
   const results = [];
   const run = async () => {
     for (let i = 0; i < entries.length; i++) {
@@ -149,7 +154,8 @@ function runChain(entries, tabId, opts) {
       // 序列化成 [object Object] —— normalizeEntry 由 common.js 提供(node 单测注入)。
       const norm = (typeof normalizeEntry === "function") ? normalizeEntry(raw) : raw;
       const e = (beforeRequest ? beforeRequest(norm, i, results) : norm) || norm;
-      const bizHeaders = Object.fromEntries(Object.entries(e.headers || {}).filter(([k]) => !isSkipHeader(k)));
+      const bizHeaders = Object.fromEntries(Object.entries(e.headers || {})
+        .filter(([k]) => !isSkipHeader(k) || (keep && keep.has(String(k).toLowerCase()))));
       let live;
       try {
         const res = await chrome.scripting.executeScript({

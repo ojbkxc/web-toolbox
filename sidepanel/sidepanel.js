@@ -494,16 +494,26 @@ function updatePreludeUi() {
 
 // CSV 数据驱动提示(v1.0.82): 依赖链变量数决定是否显示「数据驱动」行。
 // 链变量来自 aiChain(AI 建链 + corr 合成链) + 轻量自动关联(v1.0.84)。无链时无数据可驱动 → 隐藏, 不空占一行。
-// autoDetectChain 有 200 条上限(v1.0.86), O(n²) 最多 40000 次正则(几毫秒), 无需防抖。
+// autoDetectChain 是 O(n²) 且不设上限(v1.0.87 起可全量跑) —— 录制期每次同步追加都会经
+// refreshPrelude→updatePreludeUi 走到这里, 3000 条级全量重算会卡 UI; 指纹缓存:
+// 条目集引用/长度、过滤词、勾选态、aiChain 引用任一变化才重算, 否则复用上次列数。
+const _csvUiCache = { entries: null, len: -1, q: "", pk: "", chain: undefined, cols: [] };
 function updateCsvUi() {
   const el = $("csvHint");
   if (!el) return;
-  const es = exportSet(); // 缓存: autoDetectChain 与 collectCsvData 共用, 避免两次过滤计算
-  const cols = collectCsvData(es, mergeChain(autoDetectChain(es), aiChain || []));
+  const q = $("q") ? $("q").value : "";
+  const pk = pickMode ? [...pickIds].join(",") : "";
+  if (!(_csvUiCache.entries === entries && _csvUiCache.len === entries.length &&
+      _csvUiCache.q === q && _csvUiCache.pk === pk && _csvUiCache.chain === aiChain)) {
+    const es = exportSet(); // 缓存: autoDetectChain 与 collectCsvData 共用, 避免两次过滤计算
+    _csvUiCache.cols = collectCsvData(es, mergeChain(autoDetectChain(es), aiChain || []));
+    _csvUiCache.entries = entries; _csvUiCache.len = entries.length;
+    _csvUiCache.q = q; _csvUiCache.pk = pk; _csvUiCache.chain = aiChain;
+  }
   const cnt = $("csvCount");
-  if (cols.length) {
+  if (_csvUiCache.cols.length) {
     el.style.display = "";
-    cnt.textContent = cols.length;
+    cnt.textContent = _csvUiCache.cols.length;
   } else {
     el.style.display = "none";
   }
@@ -1582,6 +1592,9 @@ async function runChainReplay() {
   const chainRun = runChain(vis, t.id, {
     lease,
     singleTimeoutMs: SINGLE_TIMEOUT_MS,
+    // 链注入头放行集(如 header.Authorization): 录制快照的 authorization 该剔(过期凭据),
+    // 链注入的 live 值该留 —— 不传则 Bearer 系统建链静默失效且回执谎报 applied。
+    keepHeaders: injector ? injector.headerTargets() : null,
     beforeRequest: (e, i) => injector ? injector.inject(e, aiChain) : e,
     afterRequest: (e, i, live) => { if (injector && live && live.text) injector.note(i, e, live.text); },
     assertFor,
@@ -1696,7 +1709,7 @@ $("btnChainAiDiag").onclick = aiDebugFailures;
 // ---------- AI 生成断言(A3) ----------
 // 为当前导出集的每条接口生成业务断言, 存 toolbox.aiAsserts;
 // 链路重放时若某条有断言则用断言判定成败(状态码 200 但含业务错误码也算失败)。
-let aiAsserts = null; // Map: path -> [{type,target,expect}]
+let aiAsserts = null; // Map: "method path" -> [{type,target,expect}](生成/消费两侧 key 同构, 见 aiBuildAsserts 与 runChainReplay)
 async function aiBuildAsserts() {
   const btn = $("btnAiAssert");
   if (btn.disabled) return;

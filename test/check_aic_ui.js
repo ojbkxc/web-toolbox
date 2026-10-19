@@ -179,6 +179,52 @@ const ok = (name, cond, got) => {
     vm.runInContext("aiChain = null", sandbox); // 还原, 不污染后续场景
   }
 
+  // 7. 链注入头放行(v1.0.97): aic.headerTargets() 收集 to 在集内的 header.* 目标头名;
+  //    applyAiChainToJmx 给 to 打 _keepHeaders → buildJmx 的 HeaderManager 放行链注入头
+  //    (录制快照 authorization 是过期凭据该剔, 链注入 ${var} 是提取器 live 值该留)。
+  {
+    const esH = [
+      { id: "h0", method: "POST", url: "https://h.com/login", path: "/login", query: "", headers: {}, body: "{}", status: 200, response: "", ts: "" },
+      { id: "h1", method: "POST", url: "https://h.com/save", path: "/save", query: "", headers: { authorization: "Bearer OLD" }, body: "{}", status: 200, response: "", ts: "" },
+    ];
+    const chainH = [{ from: 0, fromId: "h0", fromJsonPath: "data.tok", to: 1, toId: "h1", toParam: "header.Authorization", var: "v_bear", value: "" }];
+    const ht = sandbox.applyAiChain(esH, chainH).headerTargets();
+    ok("headerTargets 收链注入头(小写)", ht instanceof Set && ht.has("authorization") && ht.size === 1, [...ht]);
+    const ht2 = sandbox.applyAiChain(esH, [{ ...chainH[0], toId: "gone" }]).headerTargets();
+    ok("to 不在集 → 不收集(悬空链不误放行)", ht2.size === 0, [...ht2]);
+    const appliedH = sandbox.applyAiChainToJmx(esH.map((e) => ({ ...e })), chainH);
+    ok("applyAiChainToJmx 打 _keepHeaders 标", appliedH[1]._keepHeaders && appliedH[1]._keepHeaders.has("authorization"), appliedH[1]._keepHeaders && [...appliedH[1]._keepHeaders]);
+    ok("链注入覆盖同名快照头(值是 ${var})", appliedH[1].headers.Authorization === "${v_bear}", appliedH[1].headers);
+    const jmxH = sandbox.buildJmx(appliedH, { threads: 1 });
+    ok("JMX HeaderManager 放行链注入 Authorization", /name="Header\.name">Authorization</.test(jmxH) && /name="Header\.value">\$\{v_bear\}</.test(jmxH), (jmxH.match(/Header\.name[^<]{0,40}/) || ["无"]) + "");
+    const jmxNo = sandbox.buildJmx(esH.map((e) => ({ ...e })), { threads: 1 });
+    ok("无链时快照 authorization 仍被剔", !/name="Header\.name">Authorization</.test(jmxNo), (jmxNo.match(/Header\.name[^<]{0,40}/) || ["无"]) + "");
+  }
+
+  // 8. updateCsvUi 指纹缓存(v1.0.97): autoDetectChain 是 O(n²) 不设上限, 录制期每次同步
+  //    追加都经 refreshPrelude→updatePreludeUi 走到 updateCsvUi —— 全量重算卡 UI。
+  //    同输入(条目集引用/长度/过滤词/勾选态/aiChain 引用)复用上次列数, 任一变化才重算。
+  {
+    vm.runInContext(`entries = [
+      { id: "c0", method: "POST", url: "https://h.com/login", path: "/login", query: "", headers: {}, body: "{}", status: 200, response: '{"data":{"ord":"ABC12345"}}', ts: "" },
+      { id: "c1", method: "POST", url: "https://h.com/save", path: "/save", query: "", headers: {}, body: '{"ord":"ABC12345"}', status: 200, response: "", ts: "" }
+    ];
+    aiChain = null;
+    __adcCalls = 0;
+    __adc = autoDetectChain;
+    autoDetectChain = (es) => { __adcCalls++; return __adc(es); };`, sandbox);
+    vm.runInContext("updateCsvUi()", sandbox);
+    vm.runInContext("updateCsvUi()", sandbox);
+    vm.runInContext("updateCsvUi()", sandbox);
+    ok("同输入连调 3 次 autoDetectChain 只算 1 次", vm.runInContext("__adcCalls", sandbox) === 1, vm.runInContext("__adcCalls", sandbox));
+    vm.runInContext("entries.push({ id: 'c2', method: 'GET', url: 'https://h.com/x', path: '/x', query: '', headers: {}, body: '', status: 200, response: '', ts: '' }); updateCsvUi()", sandbox);
+    ok("条目追加(length 变)触发重算", vm.runInContext("__adcCalls", sandbox) === 2, vm.runInContext("__adcCalls", sandbox));
+    vm.runInContext("aiChain = [{ from: 0, fromId: 'c0', fromJsonPath: 'data.ord', to: 1, toId: 'c1', toParam: 'ord', var: 'v_c', value: 'ABC12345' }]; updateCsvUi()", sandbox);
+    ok("aiChain 引用变化触发重算", vm.runInContext("__adcCalls", sandbox) === 3, vm.runInContext("__adcCalls", sandbox));
+    ok("csvHint 显示数据驱动列(缓存结果与显示一致)", mkEl("csvHint").style.display === "" && Number(mkEl("csvCount").textContent) >= 1, mkEl("csvCount").textContent);
+    vm.runInContext("aiChain = null", sandbox);
+  }
+
   console.log(fails ? `=== FAIL ${fails} ===` : "=== aic UI/导出链路 PASS ===");
   process.exit(fails ? 1 : 0);
 })();

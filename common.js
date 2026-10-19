@@ -435,6 +435,9 @@ function applyAiChainToJmx(entries, chain) {
     const target = c.toParam || "";
     if (/^header\./i.test(target)) {
       const k = target.slice(7);
+      // 链注入头打标(小写): jmx httpSampler 剔浏览器管理头时放行 —— 录制快照里的
+      // authorization 是过期凭据(该剔), 链注入的 ${var} 是提取器 live 值(该留)。
+      (to._keepHeaders = to._keepHeaders || new Set()).add(k.toLowerCase());
       if (k) to.headers = { ...(to.headers || {}), [k]: "${" + c.var + "}" };
     } else if (/^url\./i.test(target)) {
       const k = target.slice(4);

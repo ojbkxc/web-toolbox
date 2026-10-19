@@ -136,7 +136,21 @@ function applyAiChain(entries, chain) {
       if (fromIdx !== i) continue;
       liveValues.set((c.fromId != null ? c.fromId : c.from) + "|" + c.fromJsonPath, extractFromLive(i, c.fromJsonPath, text));
     }
-  }, report: () => ({ applied, missing }) };
+  }, report: () => ({ applied, missing }),
+  // 链显式注入的头名集合(小写, 只收 to 条目在集内的链): 供重放引擎剔浏览器管理头时
+  // 放行 —— 录制快照里的 authorization 是过期凭据(该剔), 链注入的是前序响应提取的
+  // live 值(该留); 不放行则 Bearer 系统的链静默失效(请求裸奔 401)且回执谎报 applied。
+  // 与 applyAiChainToJmx 给 to._keepHeaders 打标同语义(那边按条目标, 这边按集合传)。
+  headerTargets: () => {
+    const s = new Set();
+    for (const c of chain) {
+      const t = c.toParam || "";
+      if (!/^header\./i.test(t)) continue;
+      const k = t.slice(7).toLowerCase();
+      if (k && indexOfEntry(c, "to") >= 0) s.add(k);
+    }
+    return s;
+  } };
 }
 
 // node 侧导出(浏览器同页 <script> 全局加载, 此块不执行)

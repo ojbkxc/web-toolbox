@@ -41,6 +41,10 @@ class H(BaseHTTPRequestHandler):
             self._r(200, {"resultCode": "0", "ok": "LIVE123" in body, "seen": body[:120]})
         elif self.path == "/save-form":
             self._r(200, {"resultCode": "0", "ok": "orderNo=LIVE123" in body, "seen": body[:120]})
+        elif self.path == "/login-va":
+            self._r(200, {"resultCode": "0", "data": {"orderNo": "LIVE\\\\g<1>123"}})
+        elif self.path == "/save-va":
+            self._r(200, {"resultCode": "0", "ok": ('"orderNo": "LIVE\\\\g<1>123"' in body) and ('"orderNo":"KEEP"' in body), "seen": body[:200]})
         else:
             self._r(404, {"resultCode": "404"})
     def do_GET(self):
@@ -66,12 +70,15 @@ execSync("python - <<'EOF'\nimport time, urllib.request\nfor _ in range(50):\n  
       { id: "p2", method: "GET", url: "https://h.com/list?orderNo=OLD", path: "/list", query: "orderNo=OLD", headers: {}, body: "", status: 200, response: "", ts: "" },
       { id: "p3", method: "GET", url: "https://h.com/detail/orderNo/OLD", path: "/detail/orderNo/OLD", query: "", headers: {}, body: "", status: 200, response: "", ts: "" },
       { id: "p4", method: "POST", url: "https://h.com/save-form", path: "/save-form", query: "", headers: {}, body: "orderNo=OLD&x=1", status: 200, response: "", ts: "" },
+      { id: "p5", method: "POST", url: "https://h.com/login-va", path: "/login-va", query: "", headers: {}, body: "{}", status: 200, response: "", ts: "" },
+      { id: "p6", method: "POST", url: "https://h.com/save-va", path: "/save-va", query: "", headers: {}, body: '{"inner":{"orderNo":"KEEP"},"orderNo":"OLD"}', status: 200, response: "", ts: "" },
     ]);
     const chain = [
       { from: 0, fromId: "p0", fromJsonPath: "data.orderNo", to: 1, toId: "p1", toParam: "orderNo", var: "v_ord", value: "" },
       { from: 0, fromId: "p0", fromJsonPath: "data.orderNo", to: 2, toId: "p2", toParam: "url.orderNo", var: "v_ord", value: "" },
       { from: 0, fromId: "p0", fromJsonPath: "data.orderNo", to: 3, toId: "p3", toParam: "url.orderNo", var: "v_ord", value: "" },
       { from: 0, fromId: "p0", fromJsonPath: "data.orderNo", to: 4, toId: "p4", toParam: "orderNo", var: "v_ord", value: "" },
+      { from: 5, fromId: "p5", fromJsonPath: "data.orderNo", to: 6, toId: "p6", toParam: "orderNo", var: "v_va", value: "OLD" },
     ];
     const script = P.buildPyScript(mkEntries(), "cookies.state.json", { aiChain: chain });
 
@@ -85,6 +92,11 @@ execSync("python - <<'EOF'\nimport time, urllib.request\nfor _ in range(50):\n  
     ok("def 带 ctx 参数", /def step_\w+\(sess, ctx=None,/.test(script), script.match(/def step_\w+\([^)]*\)/)?.[0]);
     ok("main 用共享 ctx", /ctx = \{\}.*AI 参数链/.test(script), script.match(/ctx = \{[^}]*\}/)?.[0]);
     ok("pick 函数已生成(链场景)", script.includes("def pick(obj, path):"), "");
+    // 值锚定 + repl lambda 化(v1.0.97): 链带录制值时生成 _new 先试值锚定; JSON 注入的
+    // repl 必须是 lambda —— 字符串 repl 形态下 ctx 值含 \g/\1 会被 re.sub 当组引用
+    // 解释(re.error 或静默毁 payload)。
+    ok("值锚定分支生成(_new 形态)", script.includes("_new = re.sub"), "");
+    ok("JSON 注入 repl 是 lambda(防 \\g 组引用)", script.includes("lambda m: " + P.pyStr('"orderNo": "') + " + str(ctx["), "");
 
     // 2b. GBK 控制台编码防线: 生成的脚本必须自带 reconfigure(⚠/✓ 等 print 字符
     //     在 Windows GBK 控制台直接 UnicodeEncodeError, 降级路径比正常路径先死)
@@ -155,12 +167,18 @@ r4 = ns["step_save_form"](sess, ctx)
 assert r4.json().get("ok") is True, r4.json()
 rc = ns["step_save"](sess, {})
 assert rc.json().get("ok") is False, "无链对照应保持录制值"
+ns["step_login_va"](sess, ctx)
+assert ctx.get("v_va") == "LIVE\\\\g<1>123", ctx
+r5 = ns["step_save_va"](sess, ctx)
+assert r5.json().get("ok") is True, r5.json()
+r5b = ns["step_save_va"](sess, {})
+assert r5b.json().get("ok") is False, "无 ctx 对照应保持录制原样(inner 未被动)"
 print("PYCHAIN-E2E-OK")
 `;
     const driveFile = path.join(WORK, "drive.py");
     fs.writeFileSync(driveFile, drive, "utf-8");
     const out = execSync(`python -X utf8 "${driveFile.replace(/\\/g, "/")}"`, { shell: "bash", encoding: "utf-8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
-    ok("E2E: 提取+body/query/路径段/表单注入全过(server 断言)", out.includes("PYCHAIN-E2E-OK"), out.slice(-200));
+    ok("E2E: 提取+body/query/路径段/表单/值锚定/转义注入全过(server 断言)", out.includes("PYCHAIN-E2E-OK"), out.slice(-200));
   } finally {
     srv.kill();
     fs.rmSync(WORK, { recursive: true, force: true });

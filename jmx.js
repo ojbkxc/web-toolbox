@@ -208,8 +208,11 @@ function httpSampler(e, opts) {
   parts.push("</HTTPSamplerProxy>");
   parts.push("<hashTree>");
 
-  // HeaderManager: 只带业务头(Cookie 由 CookieManager 管; sec-/UA/浏览器头剔除)
-  const biz = Object.entries(e.headers).filter(([k]) => !isSkipHeader(k));
+  // HeaderManager: 只带业务头(Cookie 由 CookieManager 管; sec-/UA/浏览器头剔除)。
+  // _keepHeaders 是链注入头集合(applyAiChainToJmx 打标): 链注入的 Authorization 等
+  // 是提取器 live 值, 不随录制快照头一起剔 —— 否则 Bearer 系统的链静默失效。
+  const biz = Object.entries(e.headers).filter(([k]) =>
+    !isSkipHeader(k) || (e._keepHeaders && e._keepHeaders.has(String(k).toLowerCase())));
   if (biz.length) {
     parts.push('<HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP HeaderManager" enabled="true">');
     parts.push('<collectionProp name="HeaderManager.headers">');

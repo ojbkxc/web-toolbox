@@ -73,6 +73,11 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ' + msg); } el
   // undefined 无响应数据、'' 有响应但为空, verdict 对 undefined==='' 判 OK 会掩盖
   // "录制侧根本没抓到响应体"的形态。normalizeForCompare 对 falsy 原样返回(undefined!== '')。
   ok(RV.normalizeForCompare(undefined) !== RV.normalizeForCompare(''), 'undefined 与空串不同指纹(缺数据≠空响应)');
+  // 3c) 秒级时间戳(v1.0.97): 10 位 unix 秒(1e9~2e9, 2001~2033 年)两次录制必不同,
+  //     不归一必 DIFF 误报; 数字 >=1e9 归 ~num、10 位数字串归 ~ts; 短数字(业务值)不归一。
+  ok(RV.normalizeForCompare('{"ts":1789520000}') === RV.normalizeForCompare('{"ts":1789520009}'), '秒级时间戳(数字)归一 → OK');
+  ok(RV.normalizeForCompare('{"ts":"1789520000"}') === RV.normalizeForCompare('{"ts":"1789520009"}'), '秒级时间戳(字符串)归一 → OK');
+  ok(RV.normalizeForCompare('{"n":999999999}') !== RV.normalizeForCompare('{"n":999999998}'), '9 位以内数字不归一(业务值保真)');
 
   // 4) 冒烟 worker: 直接用 sidepanel realm 的 loadFn 验 deadline 停止
   const html = fs.readFileSync(ROOT + '/sidepanel/sidepanel.html', 'utf8');
@@ -167,6 +172,28 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ' + msg); } el
     ok(results.every((r) => r.verdict === 'ERR'), '注入 reject → 每条 ERR verdict(CSP/未授权不拖死链): ' + results.map((r) => r.verdict).join(','));
     ok(calls.length === 2, `两条都真实尝试了注入(逐条保护非整链跳过, 实发 ${calls.length})`);
     ok(results[0].live.text.includes('Cannot access'), 'ERR 的 live.text 保留原始错误(诊断可见)');
+  }
+
+  // 7) keepHeaders 链注入头放行(v1.0.97): 录制快照的 authorization/user-agent 是浏览器
+  //    管理头(该剔); 链显式注入的 header.* 是提取器 live 值(该留) —— 不放行则 Bearer
+  //    系统的链静默失效(请求裸奔 401)且回执谎报 applied。realm 需先载 common.js
+  //    (replay.js 的 isSkipHeader 靠页面端全局, 单载 replay.js 时非空 headers 会炸)。
+  {
+    const captured = [];
+    const sbK = { chrome: { scripting: { executeScript: async (o) => { captured.push(o.args[2]); return { result: { status: 200, ok: true, text: '{}' } }; } } },
+      console, Date, URL, URLSearchParams };
+    sbK.window = sbK; sbK.globalThis = sbK; vm.createContext(sbK);
+    new vm.Script(fs.readFileSync(ROOT + '/common.js', 'utf8'), { filename: 'common.js' }).runInContext(sbK);
+    new vm.Script(fs.readFileSync(ROOT + '/replay.js', 'utf8'), { filename: 'replay.js' }).runInContext(sbK);
+    const mkEntriesK = () => ([{ id: 'k1', method: 'GET', url: 'https://x.test/a', path: '/a', query: '', headers: { authorization: 'Bearer OLD', 'user-agent': 'UA/1', 'x-biz': '1' }, body: '', response: '{}' }]);
+    const run1 = vm.runInContext('runChain(' + JSON.stringify(mkEntriesK()) + ', 1, {})', sbK);
+    await run1.run();
+    ok(captured[0].authorization === undefined && captured[0]['user-agent'] === undefined, '默认剔浏览器管理头(authorization/user-agent)');
+    ok(captured[0]['x-biz'] === '1', '业务头保留');
+    const run2 = vm.runInContext('runChain(' + JSON.stringify(mkEntriesK()) + ', 1, { keepHeaders: new Set(["authorization"]) })', sbK);
+    await run2.run();
+    ok(captured[1].authorization === 'Bearer OLD', 'keepHeaders 放行链注入头(authorization 保留)');
+    ok(captured[1]['user-agent'] === undefined, 'keepHeaders 只放行声明的头(user-agent 仍剔)');
   }
 
   console.log(fail ? `\n=== 重放/冒烟引擎走查 FAIL: ${fail} ===` : `\n=== 重放/冒烟引擎走查 PASS ===`);

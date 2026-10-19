@@ -75,11 +75,28 @@ function pyChainInjectLines(e, chains) {
       const leaf = target.split(".").pop().replace(/\s/g, "");
       if (leaf) {
         const le = esc(leaf);
-        const jsonRe = `"${le}"\\s*:\\s*"[^"]*"|"${le}"\\s*:\\s*[0-9A-Za-z_.-]+`;
-        const formRe = `(^|&)${le}=[^&]*`;
-        lines.push(`    if ctx.get(${varKey}) is not None:`);
+        // 值锚定优先(v1.0.97, 与 aic.inject/applyAiChainToJmx 同款): 同名异值字段按名
+        // 首匹配会注错位置 —— 先替换录制值快照出现的那处(终点锚防前缀值误配), miss 再
+        // 按名/表单兜底(AI 链不带 value)。
+        // repl 一律 lambda: 值含 \g/\1 时字符串 repl 会被 re.sub 当组引用解释
+        // (re.error 或静默毁 payload); lambda 拼接是纯文本, 与 JS 函数式替换同语义。
         // JSON 值直接拼(str() 已是纯文本, json.dumps 会再裹一层引号成 ""v"" —— server 收到双引号)
-        lines.push(`        payload = re.sub(${pyStr(jsonRe)}, ${pyStr(`"${leaf}": "`)} + ${vExpr} + ${pyStr('"')}, payload, count=1) if payload.lstrip().startswith("{") else re.sub(${pyStr(formRe)}, lambda m: m.group(1) + ${pyStr(leaf + "=")} + urllib.parse.quote(${vExpr}), payload, count=1)`);
+        const jsonNameRe = `"${le}"\\s*:\\s*("[^"]*"|[0-9A-Za-z_.-]+)`;
+        const formRe = `(^|&)${le}=[^&]*`;
+        const jsonValRe = c.value != null ? `"${le}"\\s*:\\s*("|)${esc(c.value)}\\1(?=[,}\\]\\s]|$)` : "";
+        const jsonRep = `lambda m: ${pyStr(`"${leaf}": "`)} + ${vExpr} + ${pyStr('"')}`;
+        const formRep = `lambda m: m.group(1) + ${pyStr(leaf + "=")} + urllib.parse.quote(${vExpr})`;
+        const fallback = `re.sub(${pyStr(jsonNameRe)}, ${jsonRep}, payload, count=1) if payload.lstrip().startswith("{") else re.sub(${pyStr(formRe)}, ${formRep}, payload, count=1)`;
+        lines.push(`    if ctx.get(${varKey}) is not None:`);
+        if (jsonValRe) {
+          lines.push(`        _new = re.sub(${pyStr(jsonValRe)}, ${jsonRep}, payload, count=1)`);
+          lines.push(`        if _new != payload:`);
+          lines.push(`            payload = _new`);
+          lines.push(`        else:`);
+          lines.push(`            payload = ${fallback}`);
+        } else {
+          lines.push(`        payload = ${fallback}`);
+        }
       }
     }
   }
