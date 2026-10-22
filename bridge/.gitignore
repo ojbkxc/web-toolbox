@@ -1,1 +1,13 @@
 node_modules/
+# 一次性抓包产物 / 分析脚本（属于具体业务，不入通用插件仓库）
+*.json
+*.log
+*.har
+!package.json
+!package-lock.json
+compare.mjs
+gen-jmx.mjs
+menu-extract.js
+menu-tree.js
+route-extract.js
+traversed.txt
