@@ -170,6 +170,10 @@ async function detachAll() {
 // 否则 popup 显示"录制中"却永远捕不到(静默失败)。
 chrome.debugger.onDetach.addListener((src) => {
   if (src && src.tabId !== undefined) {
+    // 桥接层(bridge-client.js)控制页面时会临时 attach/detach。那不是录制中断,
+    // 不能清 attach 记录和 pending —— 否则 AI 点一下就让录制静默失效。
+    const own = globalThis.toolboxBridgeOwnDetach;
+    if (own && own.has(src.tabId)) return;
     diag("warn", "attach", `tab ${src.tabId} 调试器已分离(用户点了黄条"取消"? 或被其他工具抢走)`);
     detachTab(src.tabId);
   }

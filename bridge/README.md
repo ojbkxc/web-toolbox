@@ -101,8 +101,13 @@ claude mcp add web-toolbox -s user -- node D:/GitHub/web-toolbox/bridge/src/inde
 | `tab_list` | 列出标签页 | |
 | `rec_start` / `rec_stop` | 开始/停止录制 | ✓ |
 | `tab_navigate` | 打开网址 | ✓ |
-| `page_snapshot` | 页面可访问性快照（带 ref） | ✓ |
+| `tab_activate` / `tab_close` | 切换 / 关闭标签页 | ✓ |
+| `page_snapshot` | 页面结构快照（带 ref，穿透 shadow DOM 与同源 iframe） | ✓ |
 | `page_click` / `page_type` / `page_press` | 按 ref 交互 | ✓ |
+| `page_hover` | 悬停（展开二级菜单必需） | ✓ |
+| `page_select` | 原生下拉框选择 | ✓ |
+| `page_scroll` | 滚到元素 / 按像素 / 到底部（懒加载） | ✓ |
+| `page_wait` | 等元素/文本/URL/毫秒（比 sleep 可靠） | ✓ |
 | `page_screenshot` | 截图（返回 PNG） | ✓ |
 | `page_eval` | 页面执行 JS（只读调试用） | ✓ |
 

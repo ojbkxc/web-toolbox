@@ -58,8 +58,9 @@
   // 控制方法(需要用户显式启用): 在 bridge 启动参数 --allow-control 打开后才转发。
   const CONTROL_METHODS = [
     "rec.start", "rec.stop",
-    "tab.navigate",
+    "tab.navigate", "tab.activate", "tab.close",
     "page.snapshot", "page.eval", "page.click", "page.type", "page.press",
+    "page.hover", "page.select", "page.scroll", "page.wait",
     "page.screenshot",
   ];
 

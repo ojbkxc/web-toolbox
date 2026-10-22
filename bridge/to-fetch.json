@@ -1,0 +1,218 @@
+[
+  {
+    "id": "r1792653215567o167",
+    "interface": "GET /web/iservice-spm/parameter/getValue",
+    "module": [
+      "基础数据",
+      "参数值查询"
+    ]
+  },
+  {
+    "id": "r1792653030205y84h",
+    "interface": "POST /web/iservice-spm/aspInfoData/findMultiVendorsAll",
+    "module": [
+      "基础数据",
+      "供应商查询"
+    ]
+  },
+  {
+    "id": "r1792653202178ggss",
+    "interface": "POST /web/iservice-spm/businessType/find",
+    "module": [
+      "基础数据",
+      "业务类型查询"
+    ]
+  },
+  {
+    "id": "r1792653593829uf06",
+    "interface": "POST /web/iservice-spm/ierpTransactionDetail/queryOutWarehouseCodeList",
+    "module": [
+      "库存交易",
+      "出库仓库列表"
+    ]
+  },
+  {
+    "id": "r1792653593829qoet",
+    "interface": "POST /web/iservice-spm/ierpTransactionDetail/selectAll",
+    "module": [
+      "库存交易",
+      "库存交易明细查询"
+    ]
+  },
+  {
+    "id": "r1792653202177dnih",
+    "interface": "POST /web/iservice-spm/invBillType/selectInvBillTypeDropList",
+    "module": [
+      "基础数据",
+      "库存单据类型"
+    ]
+  },
+  {
+    "id": "r1792653212183zhrz",
+    "interface": "POST /web/iservice-spm/inventory/findUpAvailAndStorageTotal",
+    "module": [
+      "库存管理",
+      "库存可用量与存储总量"
+    ]
+  },
+  {
+    "id": "r1792653215567e6uz",
+    "interface": "POST /web/iservice-spm/inventory/selectAll",
+    "module": [
+      "库存管理",
+      "库存查询"
+    ]
+  },
+  {
+    "id": "r1792653212183jm6o",
+    "interface": "POST /web/iservice-spm/inventory/selectUpWareHouseAll",
+    "module": [
+      "库存管理",
+      "上级库存查询"
+    ]
+  },
+  {
+    "id": "r1792653212183k9jo",
+    "interface": "POST /web/iservice-spm/inventory/selectUpWareHouseCount",
+    "module": [
+      "库存管理",
+      "上级库存计数"
+    ]
+  },
+  {
+    "id": "r1792653238709o843",
+    "interface": "POST /web/iservice-spm/logisticsOrder/getLogisticsOrderList",
+    "module": [
+      "物流管理",
+      "物流单查询"
+    ]
+  },
+  {
+    "id": "r1792653063119w05y",
+    "interface": "POST /web/iservice-spm/order/findordReturnOrder4Desensitize",
+    "module": [
+      "订单管理",
+      "退货订单查询(脱敏)"
+    ]
+  },
+  {
+    "id": "r1792653206812cc2q",
+    "interface": "POST /web/iservice-spm/orgOrganization/findOrgForBuMib",
+    "module": [
+      "基础数据",
+      "MIB组织查询"
+    ]
+  },
+  {
+    "id": "r1792653238710lwmg",
+    "interface": "POST /web/iservice-spm/pickingOrder/getPendingToPickingList",
+    "module": [
+      "拣货管理",
+      "待拣货列表"
+    ]
+  },
+  {
+    "id": "r1792653238710ewes",
+    "interface": "POST /web/iservice-spm/pickingOrder/getPendingToPickingListCount",
+    "module": [
+      "拣货管理",
+      "待拣货计数"
+    ]
+  },
+  {
+    "id": "r1792653238710b525",
+    "interface": "POST /web/iservice-spm/pickingOrder/getPickingOrderListCount",
+    "module": [
+      "拣货管理",
+      "拣货单计数"
+    ]
+  },
+  {
+    "id": "r1792653322802f2ql",
+    "interface": "POST /web/iservice-spm/prTransPorts/queryPort",
+    "module": [
+      "基础数据",
+      "港口查询"
+    ]
+  },
+  {
+    "id": "r1792653030205sq8l",
+    "interface": "POST /web/iservice-spm/saleOrder/judgeCACEnable",
+    "module": [
+      "订单管理",
+      "CAC启用判断"
+    ]
+  },
+  {
+    "id": "r1792653202177ln7l",
+    "interface": "POST /web/iservice-spm/shortageApplyDetail/getAllShortageApplyHead",
+    "module": [
+      "货损货差",
+      "货损申请头查询"
+    ]
+  },
+  {
+    "id": "r1792653202178nyy7",
+    "interface": "POST /web/iservice-spm/shortageApplyDetail/selectUnProcessShottageApply",
+    "module": [
+      "货损货差",
+      "未处理货损申请"
+    ]
+  },
+  {
+    "id": "r1792653223287bjz5",
+    "interface": "POST /web/iservice-spm/specialApplyDetail/findSpecialApplyData",
+    "module": [
+      "特批管理",
+      "特批明细查询"
+    ]
+  },
+  {
+    "id": "r1792653223287fr7n",
+    "interface": "POST /web/iservice-spm/specialApplyHead/findSpecialApplyHeadList",
+    "module": [
+      "特批管理",
+      "特批单查询"
+    ]
+  },
+  {
+    "id": "r1792653225599tj05",
+    "interface": "POST /web/iservice-spm/specialApplyHead/findSpecialApplyType",
+    "module": [
+      "特批管理",
+      "特批类型查询"
+    ]
+  },
+  {
+    "id": "r1792653252158pe4s",
+    "interface": "POST /web/iservice-spm/warehouseAge/warehouseAgeSearch",
+    "module": [
+      "库龄分析",
+      "库龄查询"
+    ]
+  },
+  {
+    "id": "r1792653252158vp1g",
+    "interface": "POST /web/iservice-spm/warehouseAgeHead/getWarehouseAgeHeadList",
+    "module": [
+      "库龄分析",
+      "库龄头列表"
+    ]
+  },
+  {
+    "id": "r1792653206813m1db",
+    "interface": "POST /web/iservice-spm/warehouseManage/findGoodWarehouse",
+    "module": [
+      "仓库管理",
+      "良品仓库查询"
+    ]
+  },
+  {
+    "id": "r17926532387097fcp",
+    "interface": "POST /web/iservice-spm/warehouseManage/findOnhandFlag",
+    "module": [
+      "仓库管理",
+      "在库标记查询"
+    ]
+  }
+]

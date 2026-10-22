@@ -311,6 +311,92 @@ export function registerTools(server, hub, ctx) {
     return text(await hub.request("page.press", { key: args.key, tabId: args.tabId }));
   }));
 
+  server.registerTool("page_hover", {
+    title: "悬停元素",
+    description: "鼠标悬停在 ref 元素上。菜单常见: 必须悬停才展开二级菜单。",
+    inputSchema: {
+      ref: z.string().describe("page_snapshot 里的 ref"),
+      tabId: z.number().optional(),
+    },
+  }, async (args) => run(async () => {
+    controlGuard("page.hover");
+    if (!args?.ref) return fail("缺少 ref");
+    return text(await hub.request("page.hover", { ref: args.ref, tabId: args.tabId }));
+  }));
+
+  server.registerTool("page_select", {
+    title: "下拉框选择",
+    description: "在原生 <select> 上按 value 或显示文本选择。自定义下拉请用 page_click 展开后点选项。",
+    inputSchema: {
+      ref: z.string().describe("page_snapshot 里的 ref"),
+      value: z.string().describe("选项的 value 或显示文本"),
+      tabId: z.number().optional(),
+    },
+  }, async (args) => run(async () => {
+    controlGuard("page.select");
+    if (!args?.ref || typeof args?.value !== "string") return fail("需要 ref 与 value");
+    return text(await hub.request("page.select", { ref: args.ref, value: args.value, tabId: args.tabId }));
+  }));
+
+  server.registerTool("page_scroll", {
+    title: "滚动页面",
+    description: "滚动到指定 ref 元素, 或按像素滚动, 或滚到底部。懒加载列表需要滚动才能触发后续请求。",
+    inputSchema: {
+      ref: z.string().optional().describe("滚到该元素(优先于 delta)"),
+      deltaY: z.number().optional().describe("向下滚动像素, 负数向上"),
+      deltaX: z.number().optional(),
+      toBottom: z.boolean().optional().describe("滚到页面底部"),
+      tabId: z.number().optional(),
+    },
+  }, async (args) => run(async () => {
+    controlGuard("page.scroll");
+    return text(await hub.request("page.scroll", {
+      ref: args?.ref, deltaY: args?.deltaY, deltaX: args?.deltaX,
+      toBottom: args?.toBottom, tabId: args?.tabId,
+    }));
+  }));
+
+  server.registerTool("page_wait", {
+    title: "等待条件",
+    description:
+      "等待元素出现/消失、文本出现、URL 包含某串, 或固定毫秒。比固定 sleep 可靠, "
+      + "点击后等加载优先用这个。",
+    inputSchema: {
+      selector: z.string().optional().describe("CSS 选择器, 等它出现"),
+      text: z.string().optional().describe("等页面出现这段文字"),
+      urlIncludes: z.string().optional().describe("等 URL 包含这段"),
+      untilGone: z.boolean().optional().describe("反转为'等到消失'"),
+      ms: z.number().optional().describe("固定等待毫秒(无其他条件时使用)"),
+      timeoutMs: z.number().optional().describe("超时, 默认 10000"),
+      tabId: z.number().optional(),
+    },
+  }, async (args) => run(async () => {
+    controlGuard("page.wait");
+    return text(await hub.request("page.wait", { ...(args || {}) }));
+  }));
+
+  server.registerTool("tab_activate", {
+    title: "切换标签页",
+    description: "把指定标签页切到前台并聚焦窗口。截图前通常需要先激活。",
+    inputSchema: {
+      tabId: z.number().optional().describe("省略则用当前活动页"),
+    },
+  }, async (args) => run(async () => {
+    controlGuard("tab.activate");
+    return text(await hub.request("tab.activate", { tabId: args?.tabId }));
+  }));
+
+  server.registerTool("tab_close", {
+    title: "关闭标签页",
+    description: "关闭指定标签页。",
+    inputSchema: {
+      tabId: z.number().optional(),
+    },
+  }, async (args) => run(async () => {
+    controlGuard("tab.close");
+    return text(await hub.request("tab.close", { tabId: args?.tabId }));
+  }));
+
   server.registerTool("page_screenshot", {
     title: "截图",
     description: "截取当前可视区域, 返回 base64 PNG。",
@@ -334,11 +420,12 @@ export function registerTools(server, hub, ctx) {
       + "仅用于读取/调试; 返回值必须是可序列化的。这个工具只能读到数据, 不要用它做破坏性操作。",
     inputSchema: {
       script: z.string().describe("JS 表达式, 如 document.title"),
+      allFrames: z.boolean().optional().describe("在所有 iframe 里都执行, 返回每个 frame 的结果"),
       tabId: z.number().optional(),
     },
   }, async (args) => run(async () => {
     controlGuard("page.eval");
     if (!args?.script) return fail("缺少 script");
-    return text(await hub.request("page.eval", { script: args.script, tabId: args.tabId }));
+    return text(await hub.request("page.eval", { script: args.script, allFrames: !!args.allFrames, tabId: args.tabId }));
   }));
 }
