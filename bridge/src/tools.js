@@ -428,4 +428,67 @@ export function registerTools(server, hub, ctx) {
     if (!args?.script) return fail("缺少 script");
     return text(await hub.request("page.eval", { script: args.script, allFrames: !!args.allFrames, tabId: args.tabId }));
   }));
+
+  // ================= 回归能力(v1.1.1 新增) =================
+  // 此前 MCP 只能抓包, 不能跑回归 —— 链路重放是扩展最核心的验证能力, 不给 AI
+  // 客户端等于让它只有一只眼。以下实现全部转发扩展侧同一份 runChain, 不重写逻辑。
+
+  server.registerTool("chain_replay", {
+    title: "链路重放(回归 diff)",
+    description:
+      "按录制顺序重放当前抓包, 每条响应与录制快照自动 diff(时间戳/长 token 归一化)。"
+      + "返回每条 verdict: OK(一致) / DIFF(响应体有差异) / FAIL(状态码变化) / ERR(网络错误)。"
+      + "改完代码或参数后用它一键回归整条链。需要管理权限。",
+    inputSchema: {
+      ...filterShape,
+      ids: z.array(z.string()).optional().describe("只重放指定条目 id; 省略则重放全部(遵守过滤词)"),
+      timeoutMs: z.number().optional().describe("单条超时毫秒, 默认 30000"),
+      tabId: z.number().optional().describe("在哪个标签页重放, 省略用活动页"),
+    },
+  }, async (args) => run(async () => {
+    controlGuard("chain.replay");
+    // ids 优先; 未给则按过滤词圈定, 与侧栏「导出可见集」语义一致
+    let ids = args?.ids;
+    if (!ids || !ids.length) {
+      const all = await hub.request("net.list");
+      if (!Array.isArray(all)) throw new Error("扩展返回的抓包不是数组");
+      ids = applyFilter(all, args || {}).map((e) => e.id);
+    }
+    if (!ids.length) return fail("没有可重放的条目");
+    const results = await hub.request("chain.replay", {
+      ids, tabId: args?.tabId, timeoutMs: args?.timeoutMs,
+    });
+    if (!Array.isArray(results)) return text(results);
+    // 汇总 + 逐条: 先给结论(哪些挂了), 再看细节
+    const by = results.reduce((m, r) => { m[r.verdict] = (m[r.verdict] || 0) + 1; return m; }, {});
+    const bad = results.filter((r) => r.verdict !== "OK");
+    return text({
+      total: results.length,
+      summary: ["OK", "DIFF", "FAIL", "ERR"].filter((k) => by[k]).map((k) => `${k} ${by[k]}`).join(" · ") || "无结果",
+      failed: bad.map((r) => `${r.verdict} ${r.method} ${r.path} — ${r.msg} (录制 ${r.recordedStatus} / 本次 ${r.liveStatus})`),
+      results: results.map((r) => ({ verdict: r.verdict, method: r.method, path: r.path, recordedStatus: r.recordedStatus, liveStatus: r.liveStatus })),
+    });
+  }));
+
+  server.registerTool("console_read", {
+    title: "读取控制台日志",
+    description:
+      "读取录制期间页面产生的 console.* 输出与未捕获异常(环形缓冲, 最多 500 条, "
+      + "worker 重启后清空)。排障时比只看网络请求更有用 —— 前端报错往往先出现在控制台。",
+    inputSchema: {
+      level: z.string().optional().describe("只看某个级别: error / warn / log / info / debug"),
+      limit: z.number().optional().describe("最多返回条数, 默认 200, 上限 500"),
+    },
+  }, async (args) => run(async () => text(
+    await hub.request("console.read", { level: args?.level, limit: args?.limit }),
+  )));
+
+  server.registerTool("console_clear", {
+    title: "清空控制台日志",
+    description: "清空扩展侧的控制台日志缓冲(不影响已录制的请求数据)。",
+    inputSchema: {},
+  }, async () => run(async () => {
+    controlGuard("console.clear");
+    return text(await hub.request("console.clear"));
+  }));
 }

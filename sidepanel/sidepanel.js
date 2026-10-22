@@ -66,6 +66,7 @@ function activate(t) {
   t.setAttribute("aria-selected", "true");
   $("pg" + t.dataset.tab[0].toUpperCase() + t.dataset.tab.slice(1)).classList.add("active");
   if (t.dataset.tab === "ck") loadCookiesForActiveTab();
+  if (t.dataset.tab === "log") { loadConsoleLog(); startLogPolling(); } else { stopLogPolling(); }
 }
 document.querySelectorAll(".tab").forEach((t) => {
   t.onclick = () => activate(t);
@@ -1960,6 +1961,170 @@ async function runSelectedSkill() {
   }
 }
 $("btnRunSkill").onclick = runSelectedSkill;
+
+// ---------- 控制台日志页 ----------
+// 数据源是 worker 内存环形缓冲(500 条), 与录制数据完全隔离 —— 清录制不影响日志,
+// 清日志不影响录制。轮询只在「控制台」页激活时跑, 切走立刻停, 不常开唤醒 worker。
+const LOG_POLL_MS = 2000;
+let logTimer = null;
+let logCache = [];
+
+async function loadConsoleLog() {
+  let r;
+  try {
+    r = await chrome.runtime.sendMessage({ type: "getConsoleLog", limit: 500 });
+  } catch (e) {
+    $("logMsg").textContent = "读取失败: " + String(e && e.message ? e.message : e);
+    return;
+  }
+  if (!r || !Array.isArray(r.entries)) {
+    $("logMsg").textContent = "后台未响应(扩展可能刚被浏览器回收, 稍等重试)";
+    return;
+  }
+  logCache = r.entries;
+  renderConsoleLog();
+}
+
+// 过滤语义与录制列表保持一致(空格分词 AND), 额外支持 `级别:` 前缀精确匹配
+function logMatches(e, tokens) {
+  for (const tk of tokens) {
+    if (tk.startsWith("level:")) {
+      if (e.level !== tk.slice(6)) return false;
+    } else if (!((e.text || "").includes(tk) || (e.src || "").includes(tk) || (e.level || "").includes(tk))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function renderConsoleLog() {
+  const q = $("logFilter").value.trim();
+  const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
+  const rows = tokens.length ? logCache.filter((e) => logMatches(e, tokens)) : logCache;
+  const box = $("logList");
+  // 底部分级计数: error/warn 数量是排障第一眼要看的信息
+  const cnt = { error: 0, warn: 0 };
+  for (const e of logCache) if (cnt[e.level] !== undefined) cnt[e.level]++;
+  $("logCount").textContent = logCache.length ? String(logCache.length) : "";
+  $("logMsg").textContent = logCache.length
+    ? `共 ${logCache.length} 条 · ${cnt.error} error · ${cnt.warn} warn${tokens.length ? ` · 过滤后 ${rows.length} 条` : ""}`
+    : "暂无日志。录制期间页面 console.* 与未捕获异常会实时出现在这里。";
+  if (!rows.length) {
+    box.innerHTML = logCache.length ? '<div class="empty" style="padding:16px">没有匹配的日志</div>' : "";
+    return;
+  }
+  const COLOR = { error: "#c62828", warn: "#c8871a", log: "#333", info: "#1565c0", debug: "#777" };
+  // 只渲染最后 500 条(缓冲上限), innerHTML 一次成型 —— 逐条 appendChild 在
+  // 500 条 × 2s 轮询下会造成明显卡顿
+  box.innerHTML = rows.slice(-500).map((e) => {
+    const c = COLOR[e.level] || "#333";
+    return `<div style="padding:2px 0;border-bottom:1px solid #f0f0f0;color:${c};word-break:break-all">`
+      + `<span style="color:#999;font-size:10px">${escHtml((e.ts || "").slice(11, 19))}</span> `
+      + `<b>[${escHtml(e.level)}]</b> ${escHtml(e.text)}`
+      + (e.src ? ` <span style="color:#999;font-size:10px">${escHtml(e.src)}</span>` : "")
+      + "</div>";
+  }).join("");
+}
+
+function startLogPolling() {
+  stopLogPolling();
+  // 只在录制中轮询: 空闲时不会产生新日志, 白唤醒 worker 没有意义
+  logTimer = setInterval(() => {
+    if (document.querySelector('.tab[data-tab="log"]').classList.contains("active")) loadConsoleLog();
+  }, LOG_POLL_MS);
+}
+function stopLogPolling() {
+  if (logTimer) { clearInterval(logTimer); logTimer = null; }
+}
+
+$("logFilter").oninput = () => renderConsoleLog();
+$("logRefresh").onclick = () => loadConsoleLog();
+$("logClear").onclick = async () => {
+  await chrome.runtime.sendMessage({ type: "clearConsoleLog" });
+  logCache = [];
+  renderConsoleLog();
+};
+$("logExport").onclick = () => {
+  if (!logCache.length) { $("logMsg").textContent = "没有日志可导出"; return; }
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  downloadText(`console_${stamp}.json`, JSON.stringify(logCache, null, 2));
+};
+
+// ---------- 页面页 ----------
+// 复用 background → bridgeDispatch 的同一份页面操作实现(与 MCP 工具完全同源),
+// 差别只是传输: 这里走扩展内部消息, 不需要 bridge WebSocket 连接。
+async function pageDispatch(method, params) {
+  const r = await chrome.runtime.sendMessage({ type: "pageDispatch", method, params: params || {} });
+  if (!r || r.ok !== true) throw new Error((r && r.error) || "后台无响应");
+  return r.result;
+}
+
+function pgStatus(msg, cls) {
+  const el = $("pgMsg");
+  el.textContent = msg;
+  el.style.color = cls === "err" ? "#c62828" : cls === "ok" ? "#2e7d32" : "";
+}
+
+$("pgShot").onclick = async () => {
+  pgStatus("截图中…");
+  try {
+    const r = await pageDispatch("page.screenshot");
+    if (!r || !r.dataUrl) throw new Error("未返回图像");
+    $("pgBody").innerHTML = "";
+    const img = document.createElement("img");
+    img.src = r.dataUrl;
+    img.alt = "当前页面截图";
+    // 侧栏窄, 宽度铺满即可读; 点击可看原尺寸(新窗口打开 data URL)
+    img.style.cssText = "width:100%;border:1px solid #eee;border-radius:4px;cursor:zoom-in";
+    img.onclick = () => window.open(r.dataUrl, "_blank");
+    $("pgBody").appendChild(img);
+    pgStatus("✓ 截图完成", "ok");
+  } catch (e) {
+    pgStatus("截图失败: " + String(e.message || e), "err");
+  }
+};
+
+$("pgSnap").onclick = async () => {
+  pgStatus("抓取页面结构…");
+  try {
+    const r = await pageDispatch("page.snapshot", { maxChars: 20000 });
+    const text = typeof r === "string" ? r : (r && (r.text || r.snapshot)) || JSON.stringify(r, null, 2);
+    $("pgBody").innerHTML = "";
+    const pre = document.createElement("pre");
+    // 快照是纯文本, 用 textContent 而非 innerHTML —— 页面标题/属性里可能含 < >
+    pre.textContent = text;
+    pre.style.cssText = "font:11px/1.55 Consolas,monospace;white-space:pre-wrap;word-break:break-all;margin:0;padding:8px";
+    $("pgBody").appendChild(pre);
+    pgStatus("✓ 已抓取 " + text.length + " 字符", "ok");
+  } catch (e) {
+    pgStatus("抓取失败: " + String(e.message || e), "err");
+  }
+};
+
+$("pgEvalToggle").onclick = () => {
+  const box = $("pgEvalBox");
+  const on = box.style.display === "none";
+  box.style.display = on ? "" : "none";
+  if (on) $("pgEvalCode").focus();
+};
+$("pgEvalCode").onkeydown = async (ev) => {
+  if (ev.key !== "Enter") return;
+  const code = $("pgEvalCode").value.trim();
+  if (!code) return;
+  pgStatus("执行中…");
+  try {
+    const r = await pageDispatch("page.eval", { script: code });
+    const out = r && r.ok === false ? "错误: " + r.error : JSON.stringify(r && r.value !== undefined ? r.value : r, null, 2);
+    $("pgBody").innerHTML = "";
+    const pre = document.createElement("pre");
+    pre.textContent = out;
+    pre.style.cssText = "font:11px/1.55 Consolas,monospace;white-space:pre-wrap;word-break:break-all;margin:0;padding:8px";
+    $("pgBody").appendChild(pre);
+    pgStatus(r && r.ok === false ? "执行出错" : "✓ 执行完成", r && r.ok === false ? "err" : "ok");
+  } catch (e) {
+    pgStatus("执行失败: " + String(e.message || e), "err");
+  }
+};
 
 // ---------- 初始化 ----------
 // 状态同步 = 打开时主动拉一次 + storage 推送(见 onChanged 监听):

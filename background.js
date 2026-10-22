@@ -139,6 +139,14 @@ async function attachTab(tabId) {
     diag("info", "attach", `tab ${tabId} 已附加(暂停后继续或被其他工具附加), 复用`);
   }
   await chrome.debugger.sendCommand({ tabId }, "Network.enable");
+  // 控制台日志采集(与 Trae 插件的核心能力对齐): Runtime domain 才能拿到
+  // console.* 调用与未捕获异常。只读事件流, 不注入脚本、不改变页面行为。
+  // 失败不阻断录制 —— 老 Chrome / 受限页面可能拒绝, 录包能力不受影响。
+  try {
+    await chrome.debugger.sendCommand({ tabId }, "Runtime.enable");
+  } catch (e) {
+    diag("warn", "console", `Runtime.enable 失败(控制台日志不可用): ${String(e).slice(0, 120)}`);
+  }
   const r = await chrome.storage.local.get([KEY_TABS]);
   const tabs = Array.isArray(r[KEY_TABS]) ? r[KEY_TABS] : [];
   if (!tabs.includes(tabId)) {
@@ -243,7 +251,80 @@ chrome.debugger.onEvent.addListener((src, method, params) => {
   return; // 异步分流, 不阻塞事件循环
 });
 
+// ---------- 控制台日志(环形缓冲) ----------
+// 与 harvest 分开: 日志量可达数万条且无业务价值, 进 harvest 会挤爆配额。
+// 有界(500 条/256KB), 仅内存不落盘 —— worker 重启即清, 这是可接受的(日志是排障
+// 辅助, 不是录制产物)。只在录制期间采集(attach 着才有 Runtime 事件)。
+const MAX_CONSOLE = 500;
+const MAX_CONSOLE_BYTES = 256 * 1024;
+const consoleEntries = [];
+let consoleBytes = 0;
+let consoleSeq = 0;
+
+// CDP 的 RemoteObject 可能是 {type,value} / {type,unserializableValue} / {type,description}
+// 三种形态; 对象类型只给 description(如 "Object"), 这里是刻意不展开 —— 展开要发
+// Runtime.getProperties 逐层请求, 一次 console.log 可能触发几十次 IPC, 拖慢页面。
+function remoteToString(o) {
+  if (!o || typeof o !== "object") return String(o);
+  if (o.type === "string") return o.value != null ? String(o.value) : "";
+  if (o.type === "undefined") return "undefined";
+  if (o.unserializableValue != null) return String(o.unserializableValue);
+  if (o.value !== undefined) return typeof o.value === "object" ? JSON.stringify(o.value) : String(o.value);
+  return o.description != null ? String(o.description) : `[${o.type || "unknown"}]`;
+}
+
+function pushConsole(tabId, kind, params) {
+  let level, text, extra = "";
+  if (kind === "console") {
+    // type: log/info/warning/error/debug/verbose/assert/table/dir/...
+    level = params.type === "warning" ? "warn" : (params.type || "log");
+    const args = Array.isArray(params.args) ? params.args : [];
+    text = args.map(remoteToString).join(" ");
+    // 调用栈只取最内层一帧的 url:line —— 完整 stackTrace 对排障价值低且占空间
+    const frames = params.stackTrace && Array.isArray(params.stackTrace.callFrames) ? params.stackTrace.callFrames : [];
+    if (frames.length) {
+      const f = frames[0];
+      extra = `${f.url || "(anonymous)"}:${(f.lineNumber ?? 0) + 1}`;
+    }
+  } else {
+    level = "error";
+    const d = params.exceptionDetails || {};
+    const ex = d.exception || {};
+    text = ex.description || remoteToString(ex) || d.text || "Uncaught exception";
+    extra = d.url ? `${d.url}:${(d.lineNumber ?? 0) + 1}` : "";
+  }
+  const e = {
+    id: `c${++consoleSeq}`,
+    ts: new Date().toISOString(),
+    tabId,
+    level: String(level).slice(0, 20),
+    text: String(text).slice(0, 4000),
+    src: String(extra).slice(0, 300),
+  };
+  consoleEntries.push(e);
+  consoleBytes += e.text.length + e.src.length + 80;
+  while (consoleEntries.length && (consoleEntries.length > MAX_CONSOLE || consoleBytes > MAX_CONSOLE_BYTES)) {
+    const old = consoleEntries.shift();
+    consoleBytes -= (old.text.length + old.src.length + 80);
+  }
+}
+
+function clearConsole() {
+  consoleEntries.length = 0;
+  consoleBytes = 0;
+}
+
 function dispatchNetworkEvent(src, method, params) {
+  // 控制台日志与网络请求分开收集: 日志只是诊断辅助, 不进 harvest(不污染导出集,
+  // 不占录制配额), 独立有界缓冲, 停止录制后仍可查看排障。
+  if (method === "Runtime.consoleAPICalled") {
+    pushConsole(src.tabId, "console", params);
+    return;
+  }
+  if (method === "Runtime.exceptionThrown") {
+    pushConsole(src.tabId, "exception", params);
+    return;
+  }
   if (method === "Network.requestWillBeSent") {
     // 冷启动窗口(域名清单还没从 storage 加载完): 缓冲, stateReady 完成后补处理
     if (domainsCache === null) { earlyBuffer.push(params); return; }
@@ -597,6 +678,39 @@ function toolboxHandleMessage(msg, sendResponse) {
     sendResponse({ log: [...diagEntries].slice(-500) });
     return true; // async 保持一致(实际同步返回)
   }
+  // 控制台日志读取(环形缓冲快照)。level 过滤在调用方做还是这里做?
+  // 这里只做截断(limit), 过滤归 UI —— 过滤规则改了不用动引擎, 且侧栏要显示
+  // 分级计数(需要全量)。text 含页面自己的 console 输出, 不做打码:
+  // 它是本地诊断数据, 只在用户主动点「导出」时才落盘, 永不自动外发。
+  if (msg && msg.type === "getConsoleLog") {
+    const limit = Math.max(1, Math.min(Number(msg.limit) || 500, MAX_CONSOLE));
+    sendResponse({ entries: consoleEntries.slice(-limit), total: consoleEntries.length });
+    return true;
+  }
+  if (msg && msg.type === "clearConsoleLog") {
+    clearConsole();
+    sendResponse({ ok: true });
+    return true;
+  }
+  // 页面操作(截图/快照/点击/输入/滚动…)——转发给 bridgeDispatch。
+  // 与 MCP 走同一实现, 侧栏不依赖 bridge WebSocket 连接是否建立。
+  // 白名单在此收口: 只放行 page.* / tab.* 只读或用户主动触发的操作,
+  // 不允许侧栏借此调用 export.* 等(那些在桥接侧由 Node 计算, 转发会直接抛错)。
+  if (msg && msg.type === "pageDispatch" && typeof msg.method === "string") {
+    const m = msg.method;
+    if (!/^(page|tab)\.(screenshot|snapshot|click|type|press|hover|select|scroll|wait|eval|navigate|list|activate)$/.test(m)) {
+      sendResponse({ ok: false, error: `不支持的方法 ${m}` });
+      return true;
+    }
+    const b = globalThis.toolboxBridge;
+    if (!b || typeof b.dispatch !== "function") {
+      sendResponse({ ok: false, error: "桥接层未加载(请重新加载扩展)" });
+      return true;
+    }
+    Promise.resolve(b.dispatch(m, msg.params || {}))
+      .then((r) => sendResponse({ ok: true, result: r }), (e) => sendResponse({ ok: false, error: String(e && e.message ? e.message : e) }));
+    return true;
+  }
   if (msg && msg.type === "refreshDomainCache") {
     // 兼容保留; onChanged 监听已实时跟进, 显式刷新也无害
     loadRuntimeState().then(() => sendResponse({ ok: true }));
@@ -621,11 +735,21 @@ function toolboxHandleMessage(msg, sendResponse) {
 // 桥接层(bridge-client.js)直接调用 toolboxHandleMessage; 外部页面走 runtime.onMessage。
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => toolboxHandleMessage(msg, sendResponse));
 
+// ---- 暴露给桥接层的能力(避免桥接层重复实现) ----
+// 桥接层与 background 同处一个 service worker 全局域, importScripts 后可直接读这些全局。
+globalThis.__toolboxConsole = {
+  read: () => consoleEntries.slice(),
+  clear: clearConsole,
+};
+
 // ---- AI 桥接层(可选功能) ----
 // 只做传输与命令分发, 不碰录制引擎。加载失败绝不影响录制(录制是扩展的核心价值)。
 // 依赖: 本文件已定义的 decodeHarvest / encodeHarvest / filterSkippable 等全局函数。
+// replay.js 一并加载: 桥接层新增的 chain.replay 要复用它的 runChain(单源),
+// 而 runChain 依赖 chrome.scripting —— 在 service worker 里同样可用。
 try {
-  importScripts("bridge-protocol.js", "bridge-client.js");
+  importScripts("replay.js", "bridge-protocol.js", "bridge-client.js");
+  globalThis.__toolboxReplay = { runChain: globalThis.runChain };
 } catch (e) {
   // importScripts 失败(如 Chrome 拒绝加载)时静默降级: 无桥接, 录制照常
   console.warn("[web-toolbox] 桥接层加载失败, AI 桥接不可用:", String(e));

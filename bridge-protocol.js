@@ -54,6 +54,7 @@
     "rec.status",
     "net.list", "net.get", "net.hosts",
     "tab.list",
+    "console.read",
   ];
   // 控制方法(需要用户显式启用): 在 bridge 启动参数 --allow-control 打开后才转发。
   const CONTROL_METHODS = [
@@ -62,6 +63,10 @@
     "page.snapshot", "page.eval", "page.click", "page.type", "page.press",
     "page.hover", "page.select", "page.scroll", "page.wait",
     "page.screenshot",
+    // v1.1.1: 把侧栏已有的回归能力暴露给 MCP 客户端 —— 此前 AI 客户端只能抓包,
+    // 不能跑回归。这些方法复用扩展侧同一份实现, 不新增第二套逻辑。
+    // (就地冒烟未纳入: 其实现在 sidepanel 里深度绑定 DOM, 硬搬会造第二套实现。)
+    "chain.replay", "console.clear",
   ];
 
   function isReadMethod(m) { return READ_METHODS.includes(m); }

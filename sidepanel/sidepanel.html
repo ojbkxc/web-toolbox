@@ -133,6 +133,8 @@
     <button class="tab active" role="tab" aria-selected="true" aria-controls="pgRec" data-tab="rec">录制<span class="n" id="tabRecN"></span></button>
     <button class="tab" role="tab" aria-selected="false" aria-controls="pgExp" data-tab="exp">导出</button>
     <button class="tab" role="tab" aria-selected="false" aria-controls="pgCk" data-tab="ck">Cookie<span class="n" id="ckCount">0</span></button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="pgLog" data-tab="log">控制台<span class="n" id="logCount"></span></button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="pgPage" data-tab="page">页面</button>
   </div>
 
   <div class="pages">
@@ -230,8 +232,37 @@
         <div class="ck-scroll"><table id="tbl"></table></div>
       </div>
     </div>
+    <!-- 控制台页 -->
+    <div class="page" id="pgLog" role="tabpanel" aria-label="控制台">
+      <div class="cookie">
+        <div class="ckbtns">
+          <button class="ckbtn pri" id="logRefresh" title="强制刷新一次(录制中每 2 秒自动刷新)">↻ 刷新</button>
+          <button class="ckbtn" id="logExport" title="导出当前过滤结果为 JSON 文件(本地保存, 不外发)">⬇ 导出</button>
+          <button class="ckbtn" id="logClear" title="清空引擎侧控制台缓冲(不影响已录制的请求)">🗑 清空</button>
+        </div>
+        <div class="status2" id="logMsg" role="status" aria-live="polite"></div>
+        <input type="text" id="logFilter" placeholder="过滤: error / 关键词 / source:文件" aria-label="按级别或关键词过滤控制台日志">
+        <div class="ck-scroll"><div id="logList" style="font:11px/1.6 Consolas,monospace"></div></div>
+      </div>
+    </div>
+    <!-- 页面页 -->
+    <div class="page" id="pgPage" role="tabpanel" aria-label="页面">
+      <div class="cookie">
+        <div class="ckbtns">
+          <button class="ckbtn pri" id="pgShot" title="截取当前标签页可视区域(走 CDP, 不需要 all_urls 权限)">📷 截图</button>
+          <button class="ckbtn" id="pgSnap" title="抓取页面可交互元素列表(带 ref 编号), 供后续点击/输入定位">🧭 抓结构</button>
+          <button class="ckbtn" id="pgEvalToggle" title="在页面上下文执行 JS(只读调试用)">⌨ JS</button>
+        </div>
+        <div class="status2" id="pgMsg" role="status" aria-live="polite"></div>
+        <div id="pgEvalBox" style="display:none;padding:0 10px 6px">
+          <input type="text" id="pgEvalCode" placeholder="表达式, 如 document.title" aria-label="在页面执行的 JS 表达式" style="width:100%;box-sizing:border-box;padding:5px 7px;border:1px solid #ccc;border-radius:4px;font:11px Consolas,monospace">
+        </div>
+        <div class="ck-scroll" id="pgBody">
+          <div class="empty" style="padding:16px">点「📷 截图」看当前页面, 或「🧭 抓结构」拿到可操作元素列表。</div>
+        </div>
+      </div>
+    </div>
   </div>
-
   <script src="../common.js"></script>
   <script src="../auth.js"></script>
   <script src="../correlate.js"></script>

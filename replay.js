@@ -7,6 +7,20 @@
 // 结果出汇总表: 每行 方法 路径 状态码对比 一致/不一致, 点击可看 diff。
 // 目的: 录一次 → 改完代码/参数 → 一键重放整条链路, 快速定位被破坏的接口。
 
+// isSkipHeader 由 common.js 提供(同页 script / sidepanel 共享全局作用域)。
+// service worker 里不能 importScripts common.js —— 它与 background.js 都声明了
+// KEY_DOMAINS, 同域重复 const 会 SyntaxError 把整个扩展带塌。这里给 SW 场景兜底:
+// 只在未定义时补一份, 页面侧已有 common.js 时这段不执行, 规则仍以 common.js 单源为准。
+if (typeof isSkipHeader === "undefined") {
+  const SKIP_HEADERS = ["cookie", "referer", "origin", "host", "content-length",
+    "accept-encoding", "connection", "user-agent", "sec-ch-ua", "sec-ch-ua-mobile",
+    "sec-ch-ua-platform", "sec-fetch-dest", "sec-fetch-mode", "sec-fetch-site",
+    "sec-fetch-user", "authorization", "accept", "accept-language"];
+  function isSkipHeader(k) {
+    return SKIP_HEADERS.includes(String(k).toLowerCase());
+  }
+}
+
 // 归一化响应用于比较: 尽量剥离易变部分(时间戳/耗时/随机串), 否则几乎必然 diff。
 // 策略: 数字叶子值 > 10^10(毫秒时间戳) → 归一; 保留其它。
 function normalizeForCompare(text) {

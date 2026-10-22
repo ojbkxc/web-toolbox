@@ -81,8 +81,14 @@ assert(!/chrome\.runtime\.onMessage\.addListener\(\(msg, _sender, sendResponse\)
   "旧的匿名回调已移除(不留两套逻辑)");
 
 // ================= ⑤ 桥接加载失败不拖垮录制 =================
-assert(/try\s*\{\s*\n\s*importScripts\("bridge-protocol\.js", "bridge-client\.js"\)/.test(bgSrc),
+// 断言实质语义(importScripts 被 try 包住且加载 bridge-client), 不锚定参数列表 ——
+// v1.1.1 起还加载 replay.js, 写死参数会让合法改动假红。
+assert(/try\s*\{[^}]*importScripts\([^)]*"bridge-client\.js"[^)]*\)/.test(bgSrc),
   "importScripts 包在 try 里(桥接挂了录制照常)");
+// 防御回归: 不能 importScripts common.js —— 它与 background.js 都声明 KEY_DOMAINS,
+// 同域重复 const 会 SyntaxError 把整个扩展带塌。
+assert(!/importScripts\([^)]*"common\.js"/.test(bgSrc),
+  "不加载 common.js(避免 KEY_DOMAINS 重复声明炸扩展)");
 
 // 加载顺序: 协议必须在客户端之前(客户端引用全局 BRIDGE)
 const scripts = bgSrc.match(/importScripts\(([^)]*)\)/);

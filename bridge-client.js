@@ -334,6 +334,40 @@ async function bridgeDispatch(method, params) {
       await chrome.tabs.remove(tabId);
       return { ok: true, closed: tabId };
     }
+    // ---- 回归能力(v1.1.1): 此前 MCP 只能抓包, 不能跑回归 ----
+    // 实现一律复用扩展侧已有函数(runChain 来自 replay.js), 不重写。
+    case "chain.replay": {
+      const tabId = await bridgeResolveTabId(params.tabId);
+      const entries = await bridgePickEntries(params.ids);
+      if (!entries.length) throw new Error("没有可重放的条目");
+      // runChain 依赖 chrome.scripting 在页面上下文执行, 只能在扩展侧跑
+      const { runChain } = globalThis.__toolboxReplay || {};
+      if (typeof runChain !== "function") throw new Error("replay.js 未加载, 无法重放");
+      const run = runChain(entries, tabId, { singleTimeoutMs: params.timeoutMs });
+      const results = await run.run();
+      // 只回传判定与关键字段 —— entry/live 可能含完整响应体, 全量回传会让
+      // MCP 响应膨胀到数 MB(一次 30 条链轻松超 10MB), 客户端也读不动。
+      return results.map((r) => ({
+        id: r.entry && r.entry.id,
+        method: r.entry && r.entry.method,
+        path: r.entry && r.entry.path,
+        verdict: r.verdict,
+        msg: r.msg,
+        recordedStatus: r.entry && r.entry.status,
+        liveStatus: r.live && r.live.status,
+      }));
+    }
+    case "console.read": {
+      const limit = Math.min(Math.max(Number(params.limit) || 200, 1), 500);
+      const all = (globalThis.__toolboxConsole && globalThis.__toolboxConsole.read) ? globalThis.__toolboxConsole.read() : [];
+      const lv = params.level ? String(params.level) : "";
+      const filtered = lv ? all.filter((e) => e.level === lv) : all;
+      return { total: all.length, filtered: filtered.length, entries: filtered.slice(-limit) };
+    }
+    case "console.clear": {
+      if (globalThis.__toolboxConsole && globalThis.__toolboxConsole.clear) globalThis.__toolboxConsole.clear();
+      return { ok: true };
+    }
     case "page.screenshot": {
       const tabId = await bridgeResolveTabId(params.tabId);
       // 优先 CDP 截图: chrome.tabs.captureVisibleTab 需要 <all_urls> 或 activeTab 生效,
@@ -924,12 +958,16 @@ try {
 } catch { /* ignore */ }
 
 // 暴露给 background.js 的管理入口(options 页也可以直接发消息)
+// dispatch: 侧栏「页面」页签直接调用 —— 复用与 MCP 完全相同的实现(bridgeDispatch),
+// 不产生第二套页面操作代码。侧栏不走 WebSocket(那是给外部 MCP 客户端的),
+// 而是经 background 消息直接调本函数, 因此不要求 bridge 已连接。
 globalThis.toolboxBridge = {
   connect: bridgeConnect,
   disconnect: bridgeDisconnect,
   status: bridgeStatus,
   setConfig: bridgeSetConfig,
   getConfig: bridgeGetConfig,
+  dispatch: bridgeDispatch,
 };
 
 // 启动

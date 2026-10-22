@@ -70,8 +70,8 @@ assert(optSrc.includes('aria-label="删除域名'), 'a25. options 删除按钮 a
 // 匹配粒度: 标签级正则(html.match)按"标签内同时含两个属性"断言, 不锚定属性顺序
 // (顺序变化是排版级调整, 属性成对存在才是契约——v1.0.49 自审收紧假 FAIL 面)。
 assert(html.includes('class="tabs" role="tablist"'), 'a26. tabs 容器 role=tablist 在');
-assert((html.match(/<button[^>]*role="tab"[^>]*aria-selected/g) || []).length === 3, 'a27. 三个 tab 按钮含 role=tab+aria-selected(标签级, 序无关)');
-assert((html.match(/<div[^>]*id="pg\w+"[^>]*role="tabpanel"/g) || []).length === 3, 'a28. 三个 page 容器 role=tabpanel 在');
+assert((html.match(/<button[^>]*role="tab"[^>]*aria-selected/g) || []).length === 5, 'a27. 五个 tab 按钮含 role=tab+aria-selected(标签级, 序无关)');
+assert((html.match(/<div[^>]*id="pg\w+"[^>]*role="tabpanel"/g) || []).length === 5, 'a28. 五个 page 容器 role=tabpanel 在');
 assert(/<button[^>]*aria-selected="true"[^>]*data-tab="rec"/.test(html), 'a29. 默认 tab(录制页) aria-selected=true 在');
 assert(src.includes('x.setAttribute("aria-selected", "false")') && src.includes('t.setAttribute("aria-selected", "true")'), 'a30. tab 切换 JS 同步 aria-selected 在');
 
