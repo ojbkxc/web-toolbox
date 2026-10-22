@@ -440,7 +440,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // startRecording {tabId}: attach 指定 tab 并进入 recording
 //   顺序: 先 attach 成功才置状态 —— attach 失败不留"幽灵录制中"。
 // stopRecording: detach 全部 + 状态回 idle(数据保留, 清空走 clearHarvest/丢弃按钮)
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+// 消息处理器函数化(v1.0.99 桥接改造): MV3 里 service worker 给自己发
+// chrome.runtime.sendMessage 不会被自己的 onMessage 收到, 所以 bridge-client 不能
+// "转给自己", 只能直接调这个函数。逻辑一字未改, 只是从匿名回调变成了具名函数。
+function toolboxHandleMessage(msg, sendResponse) {
   if (msg && msg.type === "getDomains") {
     chrome.storage.local.get([KEY_DOMAINS], (r) => {
       sendResponse({ domains: Array.isArray(r[KEY_DOMAINS]) ? r[KEY_DOMAINS] : [] });
@@ -595,4 +598,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     loadRuntimeState().then(() => sendResponse({ ok: true }));
     return true;
   }
-});
+  // ---- AI 桥接: options 页查询连接状态 ----
+  // 真正的 WebSocket 在 bridge-client.js 里, 它挂在 globalThis.toolboxBridge。
+  // 桥接层未加载(importScripts 失败)时返回明确状态, 不静默挂起。
+  if (msg && msg.type === "bridgeStatus") {
+    const b = globalThis.toolboxBridge;
+    if (!b) {
+      sendResponse({ connected: false, lastError: "桥接层未加载" });
+      return true;
+    }
+    Promise.resolve(b.status()).then(sendResponse, (e) => sendResponse({ connected: false, lastError: String(e) }));
+    return true;
+  }
+  return false;   // 未命中的消息交给后续监听器(桥接层等), 语义与原匿名回调一致
+}
+
+// ---- 消息入口 ----
+// 桥接层(bridge-client.js)直接调用 toolboxHandleMessage; 外部页面走 runtime.onMessage。
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => toolboxHandleMessage(msg, sendResponse));
+
+// ---- AI 桥接层(可选功能) ----
+// 只做传输与命令分发, 不碰录制引擎。加载失败绝不影响录制(录制是扩展的核心价值)。
+// 依赖: 本文件已定义的 decodeHarvest / encodeHarvest / filterSkippable 等全局函数。
+try {
+  importScripts("bridge-protocol.js", "bridge-client.js");
+} catch (e) {
+  // importScripts 失败(如 Chrome 拒绝加载)时静默降级: 无桥接, 录制照常
+  console.warn("[web-toolbox] 桥接层加载失败, AI 桥接不可用:", String(e));
+}

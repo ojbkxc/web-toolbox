@@ -238,10 +238,68 @@ function setMsg(t, cls) {
   $llmMsg.className = "msg " + cls;
 }
 
+// ---------- AI 桥接 ----------
+// 配置存在 chrome.storage.local 的 toolbox.bridge 里, 由 bridge-client.js 读取。
+// 注意: WebSocket 必须由 service worker 发起 —— options 页面里建连接没有意义
+// (页面关了就断), 所以这里只写配置, 再通过消息让 worker 立刻重连。
+const KEY_BRIDGE = "toolbox.bridge";
+const $bridgeUrl = document.getElementById("bridgeUrl");
+const $bridgeToken = document.getElementById("bridgeToken");
+const $bridgeEnabled = document.getElementById("bridgeEnabled");
+const $bridgeMsg = document.getElementById("bridgeMsg");
+
+function setBridgeMsg(t, cls) {
+  $bridgeMsg.textContent = t;
+  $bridgeMsg.className = "msg " + (cls || "");
+}
+
+async function loadBridgeConfig() {
+  const r = await chrome.storage.local.get([KEY_BRIDGE]);
+  const c = r[KEY_BRIDGE] || {};
+  $bridgeUrl.value = c.url || "ws://127.0.0.1:9280/ext";
+  $bridgeToken.value = c.token || "";
+  $bridgeEnabled.checked = c.enabled !== false;
+}
+
+async function saveBridgeConfig() {
+  const url = $bridgeUrl.value.trim() || "ws://127.0.0.1:9280/ext";
+  if (!/^wss?:\/\//i.test(url)) {
+    setBridgeMsg("✗ 地址必须以 ws:// 或 wss:// 开头", "err");
+    return false;
+  }
+  const token = $bridgeToken.value.trim();
+  await chrome.storage.local.set({
+    [KEY_BRIDGE]: { url, token, enabled: $bridgeEnabled.checked },
+  });
+  // 配置变更会触发 bridge-client 的 storage.onChanged 监听自动重连, 这里无需再发消息
+  setBridgeMsg(token ? "✓ 已保存" : "✓ 已保存(未填令牌, 不会连接)", "ok");
+  return true;
+}
+
+async function testBridge() {
+  const okSaved = await saveBridgeConfig();
+  if (!okSaved) return;
+  setBridgeMsg("连接中…", "");
+  // 状态查询走 service worker: 它才是持有 WebSocket 的一方
+  try {
+    const st = await chrome.runtime.sendMessage({ type: "bridgeStatus" });
+    if (st && st.connected) {
+      setBridgeMsg("✓ 已连接", "ok");
+    } else {
+      setBridgeMsg("✗ " + ((st && st.lastError) || "未连接(bridge 启动了吗?)"), "err");
+    }
+  } catch (e) {
+    setBridgeMsg("✗ " + String(e && e.message || e), "err");
+  }
+}
+
 // ---------- 事件 ----------
 $add.onclick = addDomain;
 $input.addEventListener("keydown", (e) => { if (e.key === "Enter") addDomain(); });
 document.getElementById("saveLlm").onclick = saveLlm;
 document.getElementById("testLlm").onclick = testLlm;
+document.getElementById("saveBridge").onclick = saveBridgeConfig;
+document.getElementById("connectBridge").onclick = testBridge;
 
 refresh();
+loadBridgeConfig();

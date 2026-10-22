@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Web 工具箱",
-  "version": "1.0.98",
-  "description": "接口测试工具箱:免 F12 录制 API 流量,AI 报告/诊断/参数建链,自动关联动态值,导出 JMeter/Python/JSONL/HAR,就地冒烟。数据不出本机,目标域名完全可配置。",
+  "version": "1.0.99",
+  "description": "免 F12 录制接口流量,导出 JMeter/Python/HAR;可让 Claude Code 等 AI 客户端通过 MCP 抓包与操作页面。",
   "minimum_chrome_version": "116",
   "permissions": [
     "cookies",

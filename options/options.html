@@ -56,6 +56,28 @@
   <span class="msg" id="llmMsg" role="status" aria-live="polite"></span>
 </div>
 
+<h2>AI 桥接 (可选)</h2>
+<div class="sub" style="margin-bottom:12px">让 Claude Code / Trae / Cursor 等 MCP 客户端直接调用本扩展做抓包与页面操作。需先在本机启动 bridge。</div>
+<div class="grid">
+  <label>桥接地址</label>
+  <input type="text" id="bridgeUrl" placeholder="ws://127.0.0.1:9280/ext">
+  <label>访问令牌</label>
+  <input type="password" id="bridgeToken" placeholder="首次启动 bridge 时终端会打印">
+  <label>启用</label>
+  <label style="text-align:left"><input type="checkbox" id="bridgeEnabled" checked> 允许 AI 客户端连接</label>
+</div>
+<div class="row">
+  <button class="primary" id="saveBridge">保存</button>
+  <button id="connectBridge">立即连接</button>
+  <span class="msg" id="bridgeMsg" role="status" aria-live="polite"></span>
+</div>
+<div class="tip">
+  <b>启动 bridge</b>(在扩展目录下):<br>
+  <code>cd bridge &amp;&amp; npm install &amp;&amp; node src/index.js</code><br>
+  需要点击/输入/导航等控制能力时加 <code>--allow-control</code>。<br>
+  首次启动会自动生成令牌并打印在终端, 复制到上面「访问令牌」即可。
+</div>
+
 <div class="tip">
   说明:
   <ul style="list-style:none; padding:0; margin:8px 0 0">

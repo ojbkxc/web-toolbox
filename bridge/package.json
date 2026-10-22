@@ -1,0 +1,22 @@
+{
+  "name": "web-toolbox-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "web-toolbox MCP bridge: exposes the browser extension to any MCP client over a local WebSocket.",
+  "type": "module",
+  "bin": {
+    "web-toolbox-bridge": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node ./src/index.js",
+    "doctor": "node ./src/doctor.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "ws": "^8.22.0",
+    "zod": "^3.25.0"
+  }
+}
