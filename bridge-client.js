@@ -306,7 +306,7 @@ async function bridgeDispatch(method, params) {
     }
     case "page.type": {
       const tabId = await bridgeResolveTabId(params.tabId);
-      return await bridgeTypeRef(tabId, params.ref, params.text, params.submit);
+      return await bridgeTypeRef(tabId, params.ref, params.text, params.submit, params.keyByKey);
     }
     case "page.press": {
       const tabId = await bridgeResolveTabId(params.tabId);
@@ -969,7 +969,21 @@ const BRIDGE_RECLEAR_FN = function (ref) {
   return { ok: true, cleared: read() === "", via: "direct" };
 };
 
-async function bridgeTypeRef(tabId, ref, value, submit) {
+// 逐字符输入: 每个字符派发完整的 keydown/keypress/keyup。insertText 虽然会触发真实的
+// beforeinput/input, 但它不产生任何按键事件 —— 监听 keydown 的自动完成、输入掩码、
+// 快捷键、富文本编辑器全都收不到, 于是出现"字进去了但联想/校验/自动跳转没反应"。
+//
+// 只对"键盘敲得出来"的 ASCII 可打印字符走按键: 中文/emoji/换行没有对应物理键, 真实输入法
+// 也是以 committed text 提交的(不是按键), 所以它们回落 insertText —— 否则中文就填不进去了。
+// 代价是每个字符 2~4 条 CDP 往返, 长文本明显更慢, 所以这是可选模式而不是默认。
+async function bridgeTypeTextByKey(target, text) {
+  for (const ch of text) {
+    if (ch.length === 1 && ch >= " " && ch <= "~") await bridgeSendKey(target, bridgeKeySpec(ch));
+    else await chrome.debugger.sendCommand(target, "Input.insertText", { text: ch });
+  }
+}
+
+async function bridgeTypeRef(tabId, ref, value, submit, keyByKey) {
   if (!/^e\d+$/.test(String(ref))) throw new Error("ref 格式非法, 应为 eN");
   // 先聚焦并清空(选中在页面里做, 真正的删除用下面的真实按键)
   const [fr] = await chrome.scripting.executeScript({
@@ -993,10 +1007,15 @@ async function bridgeTypeRef(tabId, ref, value, submit) {
       clearedVia = (v && v.via) || null;   // "key"=真实按键清干净 / "direct"=退回直接置空
 
     }
-    // insertText 会触发真实的 beforeinput/input, 受控组件能正确接住
-    await chrome.debugger.sendCommand(target, "Input.insertText", { text: value });
+    // 默认 insertText: 会触发真实的 beforeinput/input, 受控组件能正确接住, 且一次往返写完。
+    // keyByKey 时逐字符派发真实按键, 给监听键盘事件的组件用(见 bridgeTypeTextByKey)。
+    if (keyByKey) await bridgeTypeTextByKey(target, value);
+    else await chrome.debugger.sendCommand(target, "Input.insertText", { text: value });
     if (submit) await bridgeSendKey(target, BRIDGE_KEYS.enter);
-    const out = { ok: true, ref, chars: value.length, submitted: !!submit };
+    const out = {
+      ok: true, ref, chars: value.length, submitted: !!submit,
+      typedVia: keyByKey ? "keys" : "insertText",   // 可观测: 实际走了哪条输入路径
+    };
     if (clearedVia) out.clearedVia = clearedVia;
     return out;
   } finally {

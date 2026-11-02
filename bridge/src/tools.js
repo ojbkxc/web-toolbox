@@ -287,18 +287,24 @@ export function registerTools(server, hub, ctx) {
 
   server.registerTool("page_type", {
     title: "输入文本",
-    description: "按 ref 定位输入框并输入文本(先聚焦、再逐字输入, 会触发真实的 input 事件)。",
+    description:
+      "按 ref 定位输入框, 先聚焦清空再写入。默认用 insertText 整串写入(触发真实的 input 事件, "
+      + "对 React 受控组件有效, 一次写完最省事)。若目标监听 keydown(自动完成下拉、输入掩码、"
+      + "快捷键、富文本编辑器), 整串写入收不到按键事件、联想与校验不会触发 —— 此时传 keyByKey=true "
+      + "逐字符派发真实 keydown/keypress/keyup(中文等非 ASCII 字符仍以文本方式插入; 长文本会明显变慢)。",
     inputSchema: {
       ref: z.string(),
       text: z.string(),
       submit: z.boolean().optional().describe("输入后是否回车提交"),
+      keyByKey: z.boolean().optional().describe("逐字符派发真实按键(默认 false 走 insertText 整串写入)"),
       tabId: z.number().optional(),
     },
   }, async (args) => run(async () => {
     controlGuard("page.type");
     if (!args?.ref || typeof args?.text !== "string") return fail("需要 ref 与 text");
     return text(await hub.request("page.type", {
-      ref: args.ref, text: args.text, submit: !!args.submit, tabId: args.tabId,
+      ref: args.ref, text: args.text, submit: !!args.submit,
+      keyByKey: !!args.keyByKey, tabId: args.tabId,
     }));
   }));
 

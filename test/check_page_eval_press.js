@@ -1,10 +1,13 @@
-// check_page_eval_press.js —— page.eval 序列化 / page.press 按键表 / 快照禁用态(v1.1.3)
+// check_page_eval_press.js —— page.eval 序列化 / page.press 按键表 / 快照禁用态 / page.type 逐字符保真(v1.1.4)
 //
 // 覆盖:
 //   ① page.eval 不再"假装成功": Map/Set/函数/DOM 节点/循环引用/超限都规约成可读形态
-//   ② page.press 补 code/keyCode(表内键 / 单字符 / 大写带 Shift / 表外键退回只传 key)
+//   ② page.press 补 code/keyCode(表内键 / 单字符 / 大写带 Shift / 表外键与原型同名键退回只传 key)
 //   ③ 快照标出 disabled —— AI 拿到禁用按钮不再盲点
-//   ④ 死代码 bridgeSafeValue 已清(它带着同一个 JSON.stringify 缺陷, 且从未被调用)
+//   ④ 清空输入框兜底: 编辑器吞键时经原型 setter 置空并回执 clearedVia=direct
+//   ⑤ 只读/禁用/hidden 控件退回直接置空(键盘本来删不掉)
+//   ⑥ page.type 逐字符真实按键(可选 keyByKey): 默认 insertText 行为不变
+//   ⑦ 死代码 bridgeSafeValue 已清(它带着同一个 JSON.stringify 缺陷, 且从未被调用)
 //
 // 手法同上一个走查: vm 跑真实 bridge-client.js, executeScript 直调注入函数(配 DOM stub),
 // CDP 调用序列断言。
@@ -55,7 +58,7 @@ function newEnv(snapElements) {
       alarms: { create() {}, clear() {}, onAlarm: { addListener() {} } },
       tabs: { query: async () => [], update: async () => {}, get: async () => ({}), remove: async () => {} },
       windows: { update: async () => {} },
-      runtime: { getManifest: () => ({ version: "1.1.3" }) },
+      runtime: { getManifest: () => ({ version: "1.1.4" }) },
       scripting: { executeScript: async ({ func, args }) => [{ result: func(...(args || [])) }] },
       debugger: {
         attach: async () => {},
@@ -295,7 +298,46 @@ const keyEvents = (cdp) => cdp.filter((c) => c.method === "Input.dispatchKeyEven
     assert(el.dispatched.indexOf("input") >= 0, "f4. 兜底后派发 input, 页面感知到值变化");
   }
 
-  // ================= ⑥ 死代码已清 =================
+  // ================= ⑥ page.type 逐字符真实按键(可选保真模式) =================
+  // 默认仍是 insertText 整串写入(只产生 beforeinput/input); keyByKey 时逐字符派发真实
+  // keydown/keypress/keyup, 供监听键盘事件的自动完成/输入掩码/富文本组件使用。
+  {
+    const env = newEnv();
+    const el = makeInput({ value: "" });
+    el._doc = env.doc; env.doc._el = el;
+    const res = await env.sandbox.toolboxBridge.dispatch("page.type", { tabId: 1, ref: "e1", text: "ab" });
+    assert(keyEvents(env.cdp).length === 0, "g1. 默认不派发按键(保持 insertText 整串写入的旧行为)");
+    assert(env.cdp.filter((c) => c.method === "Input.insertText").length === 1, "g2. 默认仍走 insertText");
+    assert(res.typedVia === "insertText", "g3. 回执标明实际走的输入路径");
+  }
+  {
+    const env = newEnv();
+    const el = makeInput({ value: "" });
+    el._doc = env.doc; env.doc._el = el;
+    const res = await env.sandbox.toolboxBridge.dispatch("page.type", { tabId: 1, ref: "e1", text: "ab", keyByKey: true });
+    const ev = keyEvents(env.cdp);
+    assert(env.cdp.filter((c) => c.method === "Input.insertText").length === 0, "g4. 逐字符模式下不再整串 insertText");
+    assert(ev.length === 4, "g5. 两个字符各一组 keydown/keyup, 实际 " + ev.length);
+    assert(ev[0].params.type === "keyDown" && ev[0].params.text === "a" && ev[0].params.code === "KeyA" &&
+      ev[0].params.windowsVirtualKeyCode === 65, "g6. 字符键发【带 text 的 keyDown】(会产生 keypress)");
+    assert(ev[1].params.type === "keyUp" && ev[1].params.key === "a" &&
+      ev[2].params.key === "b" && ev[2].params.code === "KeyB" && ev[3].params.type === "keyUp",
+      "g7. 顺序 down(a) → up(a) → down(b) → up(b)");
+    assert(res.typedVia === "keys", "g8. 回执标明逐字符模式");
+  }
+  {
+    // 中文敲不出来(没有对应物理键), 必须回落 insertText —— 否则逐字符模式反而让中文填不进去
+    const env = newEnv();
+    const el = makeInput({ value: "" });
+    el._doc = env.doc; env.doc._el = el;
+    await env.sandbox.toolboxBridge.dispatch("page.type", { tabId: 1, ref: "e1", text: "a中", keyByKey: true });
+    const ins = env.cdp.filter((c) => c.method === "Input.insertText");
+    assert(ins.length === 1 && ins[0].params.text === "中", "g9. 非 ASCII 字符回落 insertText(中文照常能填)");
+    assert(keyEvents(env.cdp).filter((x) => x.params.key === "a" && x.params.type === "keyDown").length === 1,
+      "g10. 同一串里的 ASCII 字符仍走按键");
+  }
+
+  // ================= ⑦ 死代码已清 =================
   {
     const src = fs.readFileSync(path.join(ROOT, "bridge-client.js"), "utf8");
     assert(!/function bridgeSafeValue/.test(src),

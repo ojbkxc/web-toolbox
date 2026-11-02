@@ -1,4 +1,4 @@
-// check_page_locate.js —— 页面定位健壮性走查(v1.1.2)
+// check_page_locate.js —— 页面定位健壮性走查(v1.1.3)
 // 覆盖: ① 命中测试(遮挡上报 / shadow 宿主反查) ② 滚动落定轮询 ③ 清空输入框走真实按键路径
 //
 // 手法: vm 里跑真实 bridge-client.js; chrome.scripting.executeScript 直接把注入函数
@@ -41,7 +41,7 @@ function newEnv() {
       alarms: { create() {}, clear() {}, onAlarm: { addListener() {} } },
       tabs: { query: async () => [], update: async () => {}, get: async () => ({}), remove: async () => {} },
       windows: { update: async () => {} },
-      runtime: { getManifest: () => ({ version: "1.1.2" }) },
+      runtime: { getManifest: () => ({ version: "1.1.3" }) },
       scripting: {
         executeScript: async ({ func, args }) => {
           execCount.n++;

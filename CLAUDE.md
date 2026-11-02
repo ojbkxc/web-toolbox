@@ -8,7 +8,7 @@ Chrome 扩展且数据不出本机。目标域名完全可配置——默认对�
 
 - **远端**：https://github.com/ojbkxc/web-toolbox（main 直接 push，无 PR 流程）
 - **安装**：`chrome://extensions` 开发者模式加载本目录，源码即产物（没有 build 步骤）
-- **版本**：`manifest.json` 的 `"version"`（当前 1.1.3，功能性改动第三位递增）
+- **版本**：`manifest.json` 的 `"version"`（当前 1.1.4，功能性改动第三位递增）
 
 ## 核心验证方式：node 走查回归（不是 GitHub Actions）
 
