@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 36 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 46 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -37,6 +37,8 @@ node test/check_xxx.js        # 单跑一个
 | check_manual_prelude | manualPrelude 持久化与还原 + manual∩auto 优先级(manual=false 镇住 SSO auto 命中/refreshPrelude 重扫不覆盖, v1.0.64) | v1.0.64 |
 | check_nonhttp_guard | 非 http(s) 页录制前置拦截(popup+sidepanel) + sidepanel"未配置域名"空态指引行为级(v1.0.74, #168 方向③) + 重录按钮前置拦截(4: chrome:// 页点「↻ 重录」不发起 stop/clear/start 录制链, v1.0.81) + 重录正向全链(6/6a/6b: http 页按序 stop→clear→start + tabId + 6c: 有数据时 confirm 取消不发起录制链) | v1.0.81 |
 | check_options_page | options 旅程:域名增删改授权链/LLM 保存手势 + 删除域名撤销链路端到端(撤销 origins 与申请对称/granted 集同步/清单过滤/呈现层授权态, v1.0.70) | v1.0.70 |
+| check_page_eval_press | page.eval 值规约(Map/Set→对象数组、DOM 节点→[Node tag]、函数/循环引用/超深超量标记, 不再静默返回 {}) + page.press 按键表补 code/keyCode(表内键/单字符 KeyA-65/大写自动按 Shift/符号宁缺勿错/表外键与原型同名键都退回只传 key) + 快照标 [disabled](原生与 aria-disabled) + 只读/禁用/hidden 退回直接置空 + 编辑器吞键时兜底置空(clearedVia=direct, 经原型 setter) + 死代码 bridgeSafeValue 已清(v1.1.3) | v1.1.3 |
+| check_page_locate | 页面定位健壮性:命中测试(遮挡上报 covered/coveredBy、shadow 宿主反查、视口外不乱下结论) + 滚动落定轮询(元素移动时取落定坐标而非中途坐标) + 清空输入框走真实 Backspace(有内容才按键/Range 选中 contenteditable/非文本控件保持旧行为/清干净回执 clearedVia=key) + 悬停同源(vm 跑真实 bridge-client, 注入函数直调 + CDP 调用序列断言, v1.1.3) | v1.1.3 |
 | check_poll_perf | popup/sidepanel 轮询移除+onChanged 推送语义/renderList 3000 条底线/签名启发式 + recState 徽章双面全枚举对账(v1.0.60) | v1.0.60 |
 | check_pychain | PY 导出应用 AI 链(py_compile 过/无链不注入/PY↔JMX 提取变量名同源对拍, v1.0.62) | v1.0.62 |
 | check_prompt_parity | skill 十技能 vs 独立按钮 prompt 零分叉(超限场景语义等价) + skill mdName 契约(11 值唯一/恰一次赋值/||skill 兜底+.md 后缀, v1.0.69) | v1.0.69 |

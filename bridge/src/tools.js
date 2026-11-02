@@ -255,7 +255,8 @@ export function registerTools(server, hub, ctx) {
     title: "读取页面结构",
     description:
       "返回当前页面的可访问性快照, 每个可交互元素带 ref 编号。"
-      + "后续 click/type 用 ref 定位(比坐标可靠)。快照比完整 HTML 小得多。",
+      + "后续 click/type 用 ref 定位(比坐标可靠)。快照比完整 HTML 小得多。"
+      + "禁用的元素带 [disabled] 标记 —— 点了不会有反应, 别盲点。",
     inputSchema: {
       tabId: z.number().optional(),
       maxChars: z.number().optional().describe("快照最多返回字符数, 默认 20000"),
@@ -270,7 +271,10 @@ export function registerTools(server, hub, ctx) {
 
   server.registerTool("page_click", {
     title: "点击元素",
-    description: "按 page_snapshot 返回的 ref 点击元素(真实鼠标事件, 非合成 click)。",
+    description:
+      "按 page_snapshot 返回的 ref 点击元素(真实鼠标事件, 非合成 click)。"
+      + "若目标被遮罩/弹窗压住, 返回值会带 covered=true 与 coveredBy(压在它上面的元素)——"
+      + "此时鼠标事件被遮罩吃掉, 需先关掉遮罩再点。",
     inputSchema: {
       ref: z.string().describe("page_snapshot 里的 ref, 如 e12"),
       tabId: z.number().optional(),
@@ -300,9 +304,12 @@ export function registerTools(server, hub, ctx) {
 
   server.registerTool("page_press", {
     title: "按键",
-    description: "在焦点元素上按键, 如 Enter / Tab / Escape。",
+    description:
+      "在焦点元素上按键。支持 Enter / Tab / Escape / Backspace / Delete / Space / "
+      + "ArrowUp / ArrowDown / ArrowLeft / ArrowRight / Home / End / PageUp / PageDown, "
+      + "以及单个字符(大写字母会自动按住 Shift)。按键带完整 code/keyCode, 与真人按键一致。",
     inputSchema: {
-      key: z.string().describe("键名, 如 Enter"),
+      key: z.string().describe("键名, 如 Enter / Tab / a"),
       tabId: z.number().optional(),
     },
   }, async (args) => run(async () => {
@@ -417,7 +424,9 @@ export function registerTools(server, hub, ctx) {
     title: "在页面执行 JS",
     description:
       "在页面上下文执行一段 JS 表达式并返回结果(MAIN world, 可访问页面自己的变量)。"
-      + "仅用于读取/调试; 返回值必须是可序列化的。这个工具只能读到数据, 不要用它做破坏性操作。",
+      + "返回值会自动规约成语义等价的可序列化形态: Map→对象、Set→数组、DOM 节点→'[Node tag#id]'、"
+      + "函数→'[Function 名]'、循环引用→'[Circular]'; 超深/超量会截断并置 truncated=true。"
+      + "仅用于读取/调试; 这个工具只能读到数据, 不要用它做破坏性操作。",
     inputSchema: {
       script: z.string().describe("JS 表达式, 如 document.title"),
       allFrames: z.boolean().optional().describe("在所有 iframe 里都执行, 返回每个 frame 的结果"),

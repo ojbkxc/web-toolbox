@@ -16,6 +16,11 @@ const BRIDGE_KEY_CFG = "toolbox.bridge";       // { url, token, enabled }
 const BRIDGE_ALARM = "toolbox.bridgeReconnect";
 const BRIDGE_PING_MS = 25000;
 
+// 坐标落定采样: 连续两次量到同一个 rect 才认(最多 3 次, 间隔 30ms)。
+// 元素还在动(page 长高/入场动画未结束)时不下结论, 免得把中途坐标当最终坐标。
+const BRIDGE_SETTLE_TRIES = 3;
+const BRIDGE_SETTLE_GAP_MS = 30;
+
 const bridgeState = {
   ws: null,
   connected: false,
@@ -387,7 +392,7 @@ async function bridgeDispatch(method, params) {
     case "page.eval": {
       const tabId = await bridgeResolveTabId(params.tabId);
       // ⚠ func 会被序列化后在页面 MAIN world 执行, 访问不到 service worker 的任何函数
-      // (bridgeSafeValue 在外层作用域 —— 放进来会 ReferenceError)。序列化在页面内完成。
+      // (顶层工具函数在外层作用域 —— 放进来会 ReferenceError)。所以序列化必须内联在页面内。
       // frameId: 企业后台常在 iframe 里渲染业务页。不传就在主框架执行。
       // chrome.scripting 支持 allFrames / frameIds, 这里用 allFrames 收集主框架结果。
       const allFrames = !!params.allFrames;
@@ -395,12 +400,85 @@ async function bridgeDispatch(method, params) {
         target: { tabId, ...(allFrames ? { allFrames: true } : {}) },
         world: "MAIN",
         func: (code) => {
+          // 页面内序列化。跨进程只能走 JSON, 而 JSON.stringify 对 Map/Set/函数 不抛错却把内容
+          // 丢光(JSON.stringify(new Map()) === "{}"), DOM 节点则因 parentNode 环直接抛 —
+          // 旧实现据此判定"可序列化", 结果 page_eval 对它们假装成功返回 {}。这里先按类型
+          // 规约成语义等价的可序列化形态。
+          //
+          // 上限取宽: 旧实现没有上限, 现成脚本可能一次取回几百条数组/较深的对象。截断是防
+          // 无限结构的护栏, 不该顺手削掉它们拿得到的数据 —— 所以只在离谱尺寸上触发。
+          const MAX_DEPTH = 8, MAX_ITEMS = 1000;
+          const meta = { truncated: false };
+          const tagOf = (v) => Object.prototype.toString.call(v);
+          function conv(v, depth, seen) {
+            const t = typeof v;
+            if (v === null || t === "undefined") return null;
+            if (t === "string" || t === "boolean") return v;
+            if (t === "number") return Number.isFinite(v) ? v : String(v);   // NaN/±Infinity 过 JSON 会变 null
+            if (t === "bigint") return String(v);
+            if (t === "symbol") return String(v);
+            if (t === "function") return "[Function " + (v.name || "anonymous") + "]";
+            // DOM 节点: 有 parentNode 环, 必须在下钻之前拦掉
+            if (t === "object" && typeof v.nodeType === "number" && typeof v.nodeName === "string") {
+              let sel = String(v.nodeName || "").toLowerCase();
+              try {
+                if (v.id) sel += "#" + v.id;
+                else if (typeof v.className === "string" && v.className.trim()) sel += "." + v.className.trim().split(/\s+/)[0];
+              } catch { /* 跨域节点取属性会抛, 只留标签名 */ }
+              return "[Node " + sel + "]";
+            }
+            if (t !== "object") return String(v);
+            if (depth > MAX_DEPTH) { meta.truncated = true; return "[MaxDepth]"; }
+            if (seen.has(v)) return "[Circular]";
+            const tag = tagOf(v);
+            if (tag === "[object Date]") return isNaN(v.getTime()) ? "Invalid Date" : v.toISOString();
+            if (tag === "[object RegExp]") return String(v);
+            if (tag === "[object Error]") return { name: v.name, message: v.message };
+            seen.add(v);
+            try {
+              // 单个属性读失败(取值器抛错/Proxy 陷阱)只标该字段, 不连累整次求值 ——
+              // 旧实现靠 JSON.stringify, 这类对象是能"成功"返回一个字符串的, 不能比它更容易失败。
+              // 读值必须发生在 try 内部, 所以传 thunk 而不是先取值再调。
+              const safe = (read) => {
+                try { return conv(read(), depth + 1, seen); }
+                catch { meta.truncated = true; return "[Throws]"; }
+              };
+              if (Array.isArray(v)) {
+                const len = Math.min(v.length, MAX_ITEMS);
+                if (v.length > MAX_ITEMS) meta.truncated = true;
+                const arr = [];
+                for (let i = 0; i < len; i++) arr.push(safe(() => v[i]));
+                return arr;
+              }
+              const o = {};
+              let n = 0;
+              if (tag === "[object Map]") {
+                for (const [k, val] of v) { if (n++ >= MAX_ITEMS) { meta.truncated = true; break; } o[String(k)] = safe(() => val); }
+                return o;
+              }
+              if (tag === "[object Set]") {
+                const a = [];
+                for (const x of v) { if (n++ >= MAX_ITEMS) { meta.truncated = true; break; } a.push(safe(() => x)); }
+                return a;
+              }
+              for (const k of Object.keys(v)) { if (n++ >= MAX_ITEMS) { meta.truncated = true; break; } o[k] = safe(() => v[k]); }
+              // 自定义类的实例没有自有键: 返回 "[Object 类名]" 比空 {} 有用(Promise 也走这里)
+              const proto = Object.getPrototypeOf(v);
+              if (!Object.keys(o).length && proto !== Object.prototype && proto !== null) {
+                return "[Object " + ((v.constructor && v.constructor.name) || "unknown") + "]";
+              }
+              return o;
+            } finally { seen.delete(v); }
+          }
           try {
             // eslint-disable-next-line no-eval
             const v = eval(code);
-            if (v === undefined) return { ok: true, value: null };
-            try { JSON.stringify(v); return { ok: true, value: v }; }
-            catch { return { ok: true, value: String(v) }; }
+            let value;
+            try { value = conv(v, 0, new Set()); }
+            catch { value = String(v); }   // 规约自己挂了(如 Object.keys 被 Proxy 拦)也不能把成功变失败的
+            const out = { ok: true, value };
+            if (meta.truncated) out.truncated = true;
+            return out;
           } catch (e) {
             return { ok: false, error: String(e) };
           }
@@ -486,16 +564,6 @@ async function bridgeInvokeMessage(msg) {
     }
     setTimeout(() => { if (!done) { done = true; reject(new Error("background 响应超时")); } }, 15000);
   });
-}
-
-function bridgeSafeValue(v) {
-  try {
-    if (v === undefined) return null;
-    JSON.stringify(v);
-    return v;
-  } catch {
-    return String(v);
-  }
 }
 
 // 等页面加载完成。SPA(hash 路由)的 status 可能一直是 complete, 事件永远不来 ——
@@ -609,7 +677,12 @@ const BRIDGE_SNAPSHOT_FN = function (maxChars) {
     const tag = el.tagName.toLowerCase();
     const type = el.type ? `[${el.type}]` : "";
     const name = el.name ? ` name=${el.name}` : "";
-    lines.push(`${ref} ${tag}${type}${name} "${label}"`);
+    // 禁用态要标出来: AI 拿到禁用按钮会照点, 点了没反应也看不出为什么
+    let dis = "";
+    try {
+      if (el.disabled === true || el.getAttribute("aria-disabled") === "true") dis = " [disabled]";
+    } catch { /* 取不到就当没禁用 */ }
+    lines.push(`${ref} ${tag}${type}${name} "${label}"${dis}`);
     if (lines.join("\n").length > maxChars) { lines.push("…(快照已截断, 调大 maxChars)"); break; }
   }
 
@@ -657,7 +730,9 @@ const BRIDGE_FIND_FN = function (ref) {
   return findIn(document);
 };
 
-// 取 ref 元素中心坐标(滚动进视口后再算, 避免坐标落在视口外)
+// 取 ref 元素中心坐标(滚动进视口后再算, 避免坐标落在视口外) + 命中测试。
+// 命中测试的必要性: 弹窗/遮罩压住目标时, 按元素自身中心派发的鼠标事件会被浏览器
+// 交给遮罩 —— 旧实现照样返回 ok:true, 调用方以为点到了, 实际点的是遮罩。
 const BRIDGE_RECT_FN = function (ref) {
   function findIn(root) {
     let hit = null;
@@ -674,15 +749,47 @@ const BRIDGE_RECT_FN = function (ref) {
   if (!el) return null;
   el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
   const r = el.getBoundingClientRect();
-  return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height };
+  const x = r.left + r.width / 2, y = r.top + r.height / 2;
+
+  // elementFromPoint 在 shadow DOM 上会把内层元素重定向成宿主, 所以先问元素自己所在的
+  // root, 再退回流光 DOM 的 document; 目标在宿主 shadow 里时按宿主反查一遍。
+  let onTop = null;
+  try {
+    const root = el.getRootNode();
+    onTop = (root && typeof root.elementFromPoint === "function")
+      ? root.elementFromPoint(x, y) : document.elementFromPoint(x, y);
+  } catch { onTop = null; }
+  // onTop 为 null 表示坐标在视口外(量不出覆盖物), 此时不下"被遮挡"的结论
+  const hit = !onTop || onTop === el || el.contains(onTop)
+    || (onTop.shadowRoot && onTop.shadowRoot.contains(el));
+  let coveredBy = null;
+  if (!hit) {
+    const tag = String(onTop.tagName || "").toLowerCase();
+    const cls = (typeof onTop.className === "string" ? onTop.className : "").trim().split(/\s+/)[0] || "";
+    coveredBy = tag + (cls ? "." + cls : "");
+  }
+  return { x, y, w: r.width, h: r.height, hit, coveredBy };
 };
+
+// 量到落定为止: 连续两次量到同一个 rect 才返回(封顶 BRIDGE_SETTLE_TRIES 次)。
+async function bridgeSettleRect(tabId, ref) {
+  let box = null;
+  for (let i = 0; i < BRIDGE_SETTLE_TRIES; i++) {
+    const [r] = await chrome.scripting.executeScript({
+      target: { tabId }, world: "MAIN", func: BRIDGE_RECT_FN, args: [ref],
+    });
+    const cur = r.result;
+    if (!cur) return null;
+    if (box && cur.x === box.x && cur.y === box.y && cur.w === box.w && cur.h === box.h) return cur;
+    box = cur;
+    if (i < BRIDGE_SETTLE_TRIES - 1) await new Promise((res) => setTimeout(res, BRIDGE_SETTLE_GAP_MS));
+  }
+  return box;   // 元素一直在动(动画/轮播): 用最后一次量的, 至少比第一次新
+}
 
 async function bridgeClickRef(tabId, ref) {
   if (!/^e\d+$/.test(String(ref))) throw new Error("ref 格式非法, 应为 eN");
-  const [r] = await chrome.scripting.executeScript({
-    target: { tabId }, world: "MAIN", func: BRIDGE_RECT_FN, args: [ref],
-  });
-  const box = r.result;
+  const box = await bridgeSettleRect(tabId, ref);
   if (!box) throw new Error(`找不到 ref=${ref}(页面可能已变化, 请重新 page_snapshot)`);
 
   // 用 CDP 派发真实鼠标事件: 合成 el.click() 对 React 受控组件/跨域 iframe 无效
@@ -693,58 +800,205 @@ async function bridgeClickRef(tabId, ref) {
     await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
     await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", { type: "mousePressed", ...base });
     await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", { type: "mouseReleased", ...base });
-    return { ok: true, ref, x: Math.round(box.x), y: Math.round(box.y) };
+    const out = { ok: true, ref, x: Math.round(box.x), y: Math.round(box.y) };
+    // 命中测试没过 = 鼠标事件被上层元素吃掉(遮罩/弹窗/pointer-events:none)。
+    // 照常派发(保留旧行为), 但把覆盖物明说出去, 别让调用方以为点到了目标。
+    if (!box.hit) { out.covered = true; out.coveredBy = box.coveredBy || "未知元素"; }
+    return out;
   } finally {
     if (attached) await bridgeReleaseDebugger(tabId);
   }
 }
 
+// 清空输入框的准备: 聚焦 + 选中全部内容(删除交给下面的真实 Backspace)。
+// 为什么不直接 el.value = ""(旧实现):
+//   1) React 受控组件把值追踪器挂在元素实例上, 直接赋值让追踪器同步到 "", 随后的
+//      input 事件被判定"值没变"而吞掉 —— 清空对受控组件无效;
+//   2) contenteditable 没有 value 属性, 旧实现等于没清, 新文本会追加在旧文本后面。
+const BRIDGE_CLEAR_FN = function (ref) {
+  function findIn(root) {
+    let hit = null;
+    try { hit = root.querySelector('[data-ai-ref="' + ref + '"]'); } catch { hit = null; }
+    if (hit) return hit;
+    try {
+      for (const el of root.querySelectorAll("*")) {
+        if (el.shadowRoot) { const r = findIn(el.shadowRoot); if (r) return r; }
+      }
+    } catch { /* */ }
+    return null;
+  }
+  const el = findIn(document);
+  if (!el) return { ok: false, error: "找不到元素" };
+  try { el.focus(); } catch { /* 不可聚焦的元素继续往下走 */ }
+  const tag = String(el.tagName || "").toLowerCase();
+  // 只有"内容能被 Backspace 删掉"的文本控件才走真实按键路径: 日期/颜色/文件/hidden 等控件
+  // 的 value 不由键盘编辑, 按了也白按, 交回下面的直接置空。
+  const NO_KEY_EDIT = /^(checkbox|radio|file|submit|button|image|reset|range|color|date|datetime-local|time|month|week|hidden)$/;
+  const isText = ((tag === "input" && !NO_KEY_EDIT.test(el.type || "text")) || tag === "textarea")
+    && !el.readOnly && !el.disabled;   // 只读/禁用控件收不到键盘删除, 同样退回直接置空
+  if (isText) {
+    const hadContent = el.value !== "";
+    try { el.select(); } catch { /* 某些 type 不支持 select */ }
+    return { ok: true, hadContent };
+  }
+  if (el.isContentEditable) {
+    const hadContent = (el.textContent || "") !== "";
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch { /* 选区失败时 Backspace 只删一个字符, 无伤大雅 */ }
+    return { ok: true, hadContent };
+  }
+  // 非文本元素(如 select): 保持旧行为 —— 有 value 就置空并派发 input
+  if ("value" in el) {
+    el.value = "";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  return { ok: true, hadContent: false };
+};
+
+// 按键表: 只给 key 的话 Chrome 推不出 code/keyCode —— Tab/方向键/Backspace 这类靠 keyCode
+// 触发默认行为的键会失效, 且 event.code 为空(页面查得出来)。取值对齐 Playwright 的 US 键盘表:
+// text 有值才发 keyDown(会生成 keypress), 否则发 rawKeyDown。
+//
+// Enter 刻意不给 text: 带上 "\r" 会多出一个 char 事件, 在 textarea 上表现为多插一个换行 ——
+// 而"提交"这条路径改动前就是不带 char 的(keyDown 无 text, 页面侧与 rawKeyDown 等价),
+// 补 text 属于输入保真度的范畴, 不该在这次缺陷修复里顺手改掉现成行为。
+const BRIDGE_KEYS = {
+  enter: { key: "Enter", code: "Enter", vk: 13 },
+  tab: { key: "Tab", code: "Tab", vk: 9 },
+  escape: { key: "Escape", code: "Escape", vk: 27 },
+  backspace: { key: "Backspace", code: "Backspace", vk: 8 },
+  delete: { key: "Delete", code: "Delete", vk: 46 },
+  space: { key: " ", code: "Space", vk: 32, text: " " },
+  arrowleft: { key: "ArrowLeft", code: "ArrowLeft", vk: 37 },
+  arrowup: { key: "ArrowUp", code: "ArrowUp", vk: 38 },
+  arrowright: { key: "ArrowRight", code: "ArrowRight", vk: 39 },
+  arrowdown: { key: "ArrowDown", code: "ArrowDown", vk: 40 },
+  home: { key: "Home", code: "Home", vk: 36 },
+  end: { key: "End", code: "End", vk: 35 },
+  pageup: { key: "PageUp", code: "PageUp", vk: 33 },
+  pagedown: { key: "PageDown", code: "PageDown", vk: 34 },
+};
+const BRIDGE_SHIFTED_SYMBOLS = "~!@#$%^&*()_+{}|:\"<>?";
+const BRIDGE_SHIFT_MOD = 8;
+
+// 键名 → { key, code, vk, text?, shift? }。表外键名返回 null, 调用方退回"只传 key"。
+function bridgeKeySpec(raw) {
+  const name = raw == null ? "" : String(raw);
+  // 必须 hasOwnProperty: BRIDGE_KEYS 是普通对象字面量, "constructor"/"toString"/"__proto__"
+  // 这类键名会命中原型上的成员(取到函数/对象), 于是 spec.key 变 undefined —— 原本能"只传 key"
+  // 传过去的键名反而发出空键。查自有属性才是真的"表内键"。
+  const lower = name.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(BRIDGE_KEYS, lower)) return BRIDGE_KEYS[lower];
+  if (name.length !== 1) return null;
+  const ch = name;
+  if ((ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z")) {
+    return { key: ch, code: "Key" + ch.toUpperCase(), vk: ch.toUpperCase().charCodeAt(0), text: ch, shift: ch >= "A" && ch <= "Z" };
+  }
+  if (ch >= "0" && ch <= "9") return { key: ch, code: "Digit" + ch, vk: ch.charCodeAt(0), text: ch, shift: false };
+  if (ch === " ") return { key: " ", code: "Space", vk: 32, text: " ", shift: false };
+  // 其余符号: code/keyCode 随键盘布局而变(! 在 US 布局是 Digit1/49, 不是 33), 宁可不给
+  // 也不给错的 —— 给了错值, 页面按 event.keyCode 判断就会与真人输入不一致。
+  return { key: ch, code: "", vk: 0, text: ch, shift: BRIDGE_SHIFTED_SYMBOLS.includes(ch) };
+}
+
+// 派发一个按键(需要时补 Shift 的按下/抬起)。page.press 与 page.type 的提交/清空共用它,
+// 避免同一个按键在两处出现两种口径。
+async function bridgeSendKey(target, spec) {
+  const code = spec.code ? { code: spec.code, windowsVirtualKeyCode: spec.vk, nativeVirtualKeyCode: spec.vk } : {};
+  const modifiers = spec.shift ? BRIDGE_SHIFT_MOD : 0;
+  if (spec.shift) {
+    await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
+      type: "rawKeyDown", key: "Shift", code: "ShiftLeft", windowsVirtualKeyCode: 16, modifiers: BRIDGE_SHIFT_MOD,
+    });
+  }
+  await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
+    type: spec.text ? "keyDown" : "rawKeyDown", key: spec.key, ...code, modifiers,
+    ...(spec.text ? { text: spec.text, unmodifiedText: spec.text } : {}),
+  });
+  await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
+    type: "keyUp", key: spec.key, ...code, modifiers,
+  });
+  if (spec.shift) {
+    await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
+      type: "keyUp", key: "Shift", code: "ShiftLeft", windowsVirtualKeyCode: 16,
+    });
+  }
+}
+
+// 清空后的自检 + 兜底。旧实现用直接赋值, 任何有 value 的元素都清得掉; 改走真实 Backspace 后,
+// 富文本编辑器(ProseMirror/Quill 之类)可能吞掉按键 —— 清不掉就退回等效于旧实现的做法,
+// 不让"清空"静默失败。via 用于区分走了哪条路(可观测, 便于排查)。
+const BRIDGE_RECLEAR_FN = function (ref) {
+  function findIn(root) {
+    let hit = null;
+    try { hit = root.querySelector('[data-ai-ref="' + ref + '"]'); } catch { hit = null; }
+    if (hit) return hit;
+    try {
+      for (const el of root.querySelectorAll("*")) {
+        if (el.shadowRoot) { const r = findIn(el.shadowRoot); if (r) return r; }
+      }
+    } catch { /* */ }
+    return null;
+  }
+  const el = findIn(document);
+  if (!el) return { ok: true, cleared: false, via: "gone" };
+  const read = () => (el.isContentEditable ? (el.textContent || "") : (typeof el.value === "string" ? el.value : ""));
+  if (read() === "") return { ok: true, cleared: true, via: "key" };   // 真实按键已清干净
+  try {
+    if (el.isContentEditable) {
+      // 只选中该元素的内容再删 —— 不能用 execCommand("selectAll"), 那会选中整个文档
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.execCommand("delete");
+    } else {
+      // 走原型上的 setter: 绕过 React 挂在元素实例上的值追踪器, 否则 input 事件会被判"值没变"
+      const proto = String(el.tagName || "").toLowerCase() === "textarea"
+        ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, "value").set.call(el, "");
+    }
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  } catch { /* 兜底都失败就如实报 cleared:false, 不假装清掉了 */ }
+  return { ok: true, cleared: read() === "", via: "direct" };
+};
+
 async function bridgeTypeRef(tabId, ref, value, submit) {
   if (!/^e\d+$/.test(String(ref))) throw new Error("ref 格式非法, 应为 eN");
-  // 先聚焦并清空
+  // 先聚焦并清空(选中在页面里做, 真正的删除用下面的真实按键)
   const [fr] = await chrome.scripting.executeScript({
-    target: { tabId },
-    world: "MAIN",
-    func: (r, v) => {
-      const rf = r;
-      function findIn(root) {
-        let hit = null;
-        try { hit = root.querySelector('[data-ai-ref="' + rf + '"]'); } catch { hit = null; }
-        if (hit) return hit;
-        try {
-          for (const el of root.querySelectorAll("*")) {
-            if (el.shadowRoot) { const r = findIn(el.shadowRoot); if (r) return r; }
-          }
-        } catch { /* */ }
-        return null;
-      }
-      const el = findIn(document);
-      if (!el) return { ok: false, error: "找不到元素" };
-      el.focus();
-      if ("value" in el) {
-        el.value = "";
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-      return { ok: true };
-    },
-    args: [ref, value],
+    target: { tabId }, world: "MAIN", func: BRIDGE_CLEAR_FN, args: [ref],
   });
   if (!fr.result || !fr.result.ok) throw new Error(fr.result?.error || "聚焦失败");
 
   const target = { tabId };
   const attached = await bridgeEnsureDebugger(tabId);
   try {
+    let clearedVia = null;
+    if (fr.result.hadContent) {
+      // 有内容才按键 —— 对空框也发 Backspace 是多余的合成按键, 本身就是痕迹
+      await bridgeSendKey(target, BRIDGE_KEYS.backspace);
+      // 自检: 真实按键没清干净(编辑器吞掉按键)就退回直接置空, 不让清空静默失败
+      const [vr] = await chrome.scripting.executeScript({
+        target: { tabId }, world: "MAIN", func: BRIDGE_RECLEAR_FN, args: [ref],
+      });
+      const v = vr && vr.result;
+      if (v && v.cleared === false) throw new Error("清空输入框失败(元素内容不是可编辑文本?)");
+      clearedVia = (v && v.via) || null;   // "key"=真实按键清干净 / "direct"=退回直接置空
+
+    }
     // insertText 会触发真实的 beforeinput/input, 受控组件能正确接住
     await chrome.debugger.sendCommand(target, "Input.insertText", { text: value });
-    if (submit) {
-      await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
-        type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13,
-      });
-      await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
-        type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13,
-      });
-    }
-    return { ok: true, ref, chars: value.length, submitted: !!submit };
+    if (submit) await bridgeSendKey(target, BRIDGE_KEYS.enter);
+    const out = { ok: true, ref, chars: value.length, submitted: !!submit };
+    if (clearedVia) out.clearedVia = clearedVia;
+    return out;
   } finally {
     if (attached) await bridgeReleaseDebugger(tabId);
   }
@@ -754,9 +1008,10 @@ async function bridgePressKey(tabId, key) {
   const target = { tabId };
   const attached = await bridgeEnsureDebugger(tabId);
   try {
-    await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", { type: "keyDown", key });
-    await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", { type: "keyUp", key });
-    return { ok: true, key };
+    // 表外键名(如 F5)退回原样只传 key —— 补表不该反过来把原本能用的键拒之门外
+    const spec = bridgeKeySpec(key) || { key: key == null ? "" : String(key) };
+    await bridgeSendKey(target, spec);
+    return { ok: true, key: spec.key, code: spec.code || null };
   } finally {
     if (attached) await bridgeReleaseDebugger(tabId);
   }
@@ -765,10 +1020,7 @@ async function bridgePressKey(tabId, key) {
 // 悬停: 菜单常常要点开才出现二级项, 悬停是必要动作(不是可选的)
 async function bridgeHoverRef(tabId, ref) {
   if (!/^e\d+$/.test(String(ref))) throw new Error("ref 格式非法, 应为 eN");
-  const [r] = await chrome.scripting.executeScript({
-    target: { tabId }, world: "MAIN", func: BRIDGE_RECT_FN, args: [ref],
-  });
-  const box = r.result;
+  const box = await bridgeSettleRect(tabId, ref);
   if (!box) throw new Error(`找不到 ref=${ref}(请重新 page_snapshot)`);
   const target = { tabId };
   const attached = await bridgeEnsureDebugger(tabId);
