@@ -159,6 +159,9 @@ function makeMcpClient(proc) {
       if (method === "tab.list") return [{ id: 1, title: "t", url: "https://a.com", active: true }];
       if (method === "net.hosts") return [{ host: "a.com", count: 2 }, { host: "b.com", count: 1 }];
       if (method === "page.eval") return { ok: true, value: "v" + params.script };
+      if (method === "chain.replay") return [
+        { verdict: "OK", method: "GET", path: "/x", recordedStatus: 200, liveStatus: 200, msg: "" },
+      ];
       return { __err: "unknown " + method };
     });
 
@@ -241,6 +244,26 @@ function makeMcpClient(proc) {
     ok(tiny.response.startsWith("y".repeat(100)) && tiny.response[100] !== "y",
       "maxBody 低于下限 → 夹到 100", tiny.response.slice(95, 105));
 
+    // tab_list 结构化: {total, tabs}(数组同 net_hosts 的包裹法)
+    res = await mcp.callTool("tab_list", {});
+    const tl = res.structuredContent;
+    ok(tl && tl.total === 1 && tl.tabs[0].id === 1 && tl.tabs[0].active === true,
+      "tab_list 带 structuredContent(total/tabs)", tl);
+
+    // chain_replay 结构化: verdicts 机读(客户端免 parse 文本), failed/summary 保持人读。
+    // 假扩展要能接 chain.replay —— serveExt 已把未知方法回 __err, 上面那个 unknown 就是它,
+    // 所以这里给 handler 补 chain.replay 分支(返回两条结果)。
+    const cr = await mcp.callTool("chain_replay", { ids: ["r1"] });
+    if (cr.isError) {
+      ok(false, "chain_replay 不应报错: " + cr.content[0].text);
+    } else {
+      const cs = cr.structuredContent;
+      ok(cs && cs.total === 1 && Array.isArray(cs.verdicts) && Array.isArray(cs.results),
+        "chain_replay 带 structuredContent(total/verdicts/results)", cs && Object.keys(cs));
+      ok(cs && cs.results.length === 1 && typeof cs.results[0].verdict === "string",
+        "每条结果都带 verdict", cs && cs.results);
+    }
+
     // net_hosts 结构化(根必须是对象, 所以用 {total, hosts} 包裹而非直接给数组)
     res = await mcp.callTool("net_hosts", {});
     const hs = res.structuredContent;
@@ -319,8 +342,8 @@ function makeMcpClient(proc) {
       "page_click 协议层标破坏性");
     ok(byName.page_screenshot && byName.page_screenshot.readOnlyHint === true, "page_screenshot 标只读(已复核例外)");
     const withOutput = tools.filter((t) => t.outputSchema);
-    ok(["net_list", "bridge_status", "correlate", "net_hosts"].every((n) => withOutput.some((t) => t.name === n)),
-      "四个机读工具都带 outputSchema(" + withOutput.map((t) => t.name).join(",") + ")");
+    ok(["net_list", "bridge_status", "correlate", "net_hosts", "net_get", "chain_replay", "tab_list"].every((n) => withOutput.some((t) => t.name === n)),
+      "七个机读工具都带 outputSchema(" + withOutput.map((t) => t.name).join(",") + ")");
     const bad = tools.filter((t) => t.annotations && t.annotations.readOnlyHint === true && t.annotations.destructiveHint === true);
     ok(bad.length === 0, "没有工具同时标只读+破坏性" + (bad.length ? ": " + bad.map((t) => t.name).join(",") : ""));
     proc.kill();

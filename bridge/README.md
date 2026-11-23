@@ -98,7 +98,7 @@ claude mcp add web-toolbox -s user -- node D:/GitHub/web-toolbox/bridge/src/inde
 | `export_jmx` | 导出 JMeter 脚本 | | |
 | `export_python` | 导出 requests 重放脚本 | | |
 | `correlate` | 自动关联动态值 | | ✓ |
-| `tab_list` | 列出标签页 | | |
+| `tab_list` | 列出标签页（结构化 `{total, tabs}`） | | ✓ |
 | `rec_start` / `rec_stop` | 开始/停止录制 | ✓ | |
 | `tab_navigate` | 打开网址 | ✓ | |
 | `tab_activate` / `tab_close` | 切换 / 关闭标签页 | ✓ | |
@@ -110,7 +110,7 @@ claude mcp add web-toolbox -s user -- node D:/GitHub/web-toolbox/bridge/src/inde
 | `page_wait` | 等元素/文本/URL/毫秒（比 sleep 可靠） | ✓ | |
 | `page_screenshot` | 截图（返回 PNG） | ✓ | |
 | `page_eval` | 页面执行 JS（只读调试用） | ✓ | |
-| `chain_replay` | 链路重放 + 回归 diff（逐条 OK/DIFF/FAIL/ERR） | ✓ | |
+| `chain_replay` | 链路重放 + 回归 diff（逐条 OK/DIFF/FAIL/ERR，`structuredContent` 带 `total/verdicts/failed/results`） | ✓ | ✓ |
 | `console_read` | 读控制台日志（环形缓冲，最多 500 条） | | |
 | `console_clear` | 清空控制台日志缓冲（不动已录请求） | ✓ | |
 
@@ -229,7 +229,7 @@ node src/doctor.js      # 18 项逐条 PASS/FAIL, 每条带"下一步"
 ## 自检
 
 ```bash
-node bridge/smoke.mjs    # 端到端: 鉴权/请求响应/事件/控制开关/未连接/工具注解/错误语义/结构化返回/字节口径/分页边界/正文截断/开关不一致, 49 项(任意 cwd 都可跑)
+node bridge/smoke.mjs    # 端到端: 鉴权/请求响应/事件/控制开关/未连接/工具注解/错误语义/结构化返回/字节口径/分页边界/正文截断/开关不一致, 52 项(任意 cwd 都可跑)
 node bridge/unit.mjs     # 内部单测: register 自校验/config 参数守卫(--flag=value)/hub 拒绝分支/代理转发/断线失败/archive 落盘+权限+保留期清理/net_list 3000 条规模, 62 项(需 npm install)
 node bridge/test-exporters.mjs  # 导出口径单测 + 单源证明 + 清洗降级 + 异常形态(HEAD/空 body/204/超长 query/PATCH/OPTIONS/multipart/HAR size), 46 项
 cd bridge && npm test    # 聚合: unit(51) → exporters(29) → smoke(43), 任一层红即退出非零

@@ -5,9 +5,52 @@
 
 **门禁(2026-11-23 起)**
 - 扩展回归: `node test/run_all.js` → **59/59 PASS**(内含桥接 unit/exporters/smoke)
-- 桥接端到端: `node bridge/smoke.mjs` → **49 PASS / 0 FAIL**(任意 cwd)
+- 桥接端到端: `node bridge/smoke.mjs` → **52 PASS / 0 FAIL**(任意 cwd)
 - 桥接单测: `node bridge/unit.mjs` → **62 PASS / 0 FAIL**; `node bridge/test-exporters.mjs` → **46 PASS / 0 FAIL**
 - 桥接自检: `node bridge/src/doctor.js` → **18/18 PASS**(需先起 daemon; 含监听地址/活体握手/协议与包版本一致性/归档目录/令牌权限)
+
+---
+
+## R35-R48 · v1.1.38 (2026-11-23)
+
+### R35(续): 推送 + 门禁确认
+
+- 用户授权推送: commit `9ef1875`(38 文件, +966/-223)推到 `origin/main`, 本地/远端 SHA 一致;
+  仓库**无 Actions workflow**, 等价门禁就是本地走查(推送前 59/59)。提交信息按口径写根因。
+- R36-R47: 模型切换空窗(无模型输出), 无产物。
+
+### R49: tab_list 结构化(结构化工具覆盖面到 7/27)
+
+- `tab_list` 与 `net_hosts` 同款: 返回值是数组, `structuredContent` 用 `{total, tabs}` 包裹,
+  `content` 保持原数组(兼容既有调用方); 非数组时抛 `bad_payload`(与 net_list/net.hosts 同口径)。
+- **闸门先红后绿的自证**: `check_tool_table` 立刻抓到"工具表没标 ✓" —— 这正是这张表的价值
+  (实现改了、文档忘了改, 当轮就红)。补表行后绿。
+- smoke +1(52), `check_bridge_schema` 的"七个机读工具"断言同步更新
+  (bridge_status/net_list/net_get/net_hosts/correlate/tab_list/chain_replay)。
+
+### R48: chain_replay 汇总结构化
+
+- **问题**: `chain_replay` 的汇总只存在于 `content` 文本里(人读的 "OK 3 · DIFF 1"), 客户端要
+  判断"这条链是不是全绿"还得 parse 文本 —— 而它恰恰是 AI 改完代码后**必看**的那个数。
+- **改法**: 补 `outputSchema` + `structuredContent`: `{total, summary, verdicts[{verdict,count}],
+  failed[...], results[...]}`。`summary` 仍给人读, `verdicts/results` 给机读。
+- **踩坑**: 首版 smoke 给假扩展喂 `ids: ["q0","q1"]`, 但 `serveExt` 的 handler 没接
+  `chain.replay` 分支 → 回 `__err` → 测试误红; 补上分支(返回一条 OK 结果)后绿。
+- smoke +2(51 项), schema 闸门仍 PASS(`structured()` 与 outputSchema 成对自动生效)。
+
+### 证据
+
+| 层 | 命令 | 结果 |
+|---|---|---|
+| 全量回归 | `node test/run_all.js` | 59/59 PASS |
+| 桥接端到端 | `node bridge/smoke.mjs` | **51/51**(+2) |
+| schema/errors 闸门 | `check_bridge_schema` / `check_bridge_errors` | PASS |
+
+### 下一轮候选(不变)
+
+1. **等批**: 200KB(字符)→ 字节口径修正(录制引擎配额裁剪, AGENTS §5 ask-first)。
+2. **等批**: 响应头落库(录制引擎 CDP responseReceived 分支, ask-first)。
+3. **等定**: JMX 超长 query 是否额外产出 `Arguments` 版本。
 
 ---
 

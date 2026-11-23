@@ -439,7 +439,26 @@ export function registerTools(server, hub, ctx) {
     title: "列出标签页",
     description: "列出当前 Chrome 的标签页(id/标题/URL/是否活动)。",
     inputSchema: {},
-  }, async () => run(async () => text(await hub.request("tab.list"))));
+    outputSchema: {
+      total: z.number(),
+      tabs: z.array(z.object({
+        id: z.any().optional(),
+        title: z.string().optional(),
+        url: z.string().optional(),
+        active: z.boolean().optional(),
+      })),
+    },
+  }, async () => run(async () => {
+    const r = await hub.request("tab.list");
+    if (!Array.isArray(r)) {
+      throw Object.assign(new Error("扩展返回的 tab.list 不是数组"), { code: LOCAL.BAD_PAYLOAD });
+    }
+    // 与 net_hosts 同款处理: 数组塞不进 structuredContent 根, 用 {total, tabs} 包裹; content 保原数组
+    return {
+      content: [{ type: "text", text: JSON.stringify(r, null, 2) }],
+      structuredContent: { total: r.length, tabs: r },
+    };
+  }));
 
   register("tab_navigate", {
     title: "打开网址",
@@ -663,6 +682,26 @@ export function registerTools(server, hub, ctx) {
       timeoutMs: z.number().optional().describe("单条超时毫秒, 默认 30000"),
       tabId: z.number().optional().describe("在哪个标签页重放, 省略用活动页"),
     },
+    outputSchema: {
+      total: z.number(),
+      summary: z.string(),
+      verdicts: z.array(z.object({ verdict: z.string(), count: z.number() })),
+      failed: z.array(z.object({
+        verdict: z.string().optional(),
+        method: z.string().optional(),
+        path: z.string().optional(),
+        msg: z.string().optional(),
+        recordedStatus: z.any().optional(),
+        liveStatus: z.any().optional(),
+      })),
+      results: z.array(z.object({
+        verdict: z.string(),
+        method: z.string().optional(),
+        path: z.string().optional(),
+        recordedStatus: z.any().optional(),
+        liveStatus: z.any().optional(),
+      })),
+    },
   }, async (args) => run(async () => {
     controlGuard("chain.replay");
     // ids 优先; 未给则按过滤词圈定, 与侧栏「导出可见集」语义一致
@@ -680,10 +719,12 @@ export function registerTools(server, hub, ctx) {
     // 汇总 + 逐条: 先给结论(哪些挂了), 再看细节
     const by = results.reduce((m, r) => { m[r.verdict] = (m[r.verdict] || 0) + 1; return m; }, {});
     const bad = results.filter((r) => r.verdict !== "OK");
-    return text({
+    const verdicts = ["OK", "DIFF", "FAIL", "ERR"].filter((k) => by[k]).map((k) => ({ verdict: k, count: by[k] }));
+    return structured({
       total: results.length,
-      summary: ["OK", "DIFF", "FAIL", "ERR"].filter((k) => by[k]).map((k) => `${k} ${by[k]}`).join(" · ") || "无结果",
-      failed: bad.map((r) => `${r.verdict} ${r.method} ${r.path} — ${r.msg} (录制 ${r.recordedStatus} / 本次 ${r.liveStatus})`),
+      summary: verdicts.map((v) => `${v.verdict} ${v.count}`).join(" · ") || "无结果",
+      verdicts,
+      failed: bad.map((r) => ({ verdict: r.verdict, method: r.method, path: r.path, msg: r.msg, recordedStatus: r.recordedStatus, liveStatus: r.liveStatus })),
       results: results.map((r) => ({ verdict: r.verdict, method: r.method, path: r.path, recordedStatus: r.recordedStatus, liveStatus: r.liveStatus })),
     });
   }));
