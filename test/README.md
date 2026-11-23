@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 75 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 76 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -114,6 +114,8 @@ node test/check_xxx.js        # 单跑一个
 | check_record_all | **录制不变量「永远全录」**(AGENTS §1.7 唯一长期无闸门的一条): 2xx/3xx/4xx/5xx、任意 mime(html/png/SSE/空)、空响应(204)、超长体(截断不丢条目)全部入库; 仅 loadingFailed 与非授权域不入库。负向验证过: 注入"丢弃非 200"立刻 4 条红(v1.1.69) | v1.1.69 |
 
 | check_assert_signature | **断言库签名一致性**(本仓有三种 ok 签名, 我用错过四次 → 输出 "OK true" 的假绿): 探测每个 suite 的签名形态(name 在前/cond 在前), 要求所有调用与之相符; 自证探针钉住判定逻辑(v1.1.79) | v1.1.79 |
+
+| check_entry_health | **入口健康(秒级)**: 23 个运行时文件语法 + 真 spawn MCP 入口喂 initialize(抓 ReferenceError 类回归, 语法过≠能启动) + doctor --help 不挂住 + 扩展 6 个入口在 vm 可加载; 负向验证过(注入未定义变量 → 红)(v1.1.80) | v1.1.80 |
 
 ## 维护约定
 

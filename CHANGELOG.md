@@ -1,5 +1,16 @@
 # 更新记录
 
+## v1.1.80 — 入口健康闸门(语法过 ≠ 能启动)
+
+- **R92 的教训制度化**: 那个 archive 作用域回归, `node --check` 过、`unit.mjs` 75 条也过
+  (unit 直接 import tools.js, 不经 index.js), 但 **MCP 一启动就 ReferenceError** ——
+  只被排在最后的 smoke(8s)偶然抓到。代价是整条链跑完才暴露。
+- **新增** `test/check_entry_health.js`(秒级): ①23 个运行时文件 `node --check`;
+  ②**真 spawn `bridge/src/index.js` 并喂 initialize**, 要求回 JSON-RPC(这才是"能启动");
+  ③`doctor --help` 不挂住; ④扩展侧 6 个入口在 vm 里加载不抛。
+- **负向验证**: 注入未定义变量(与 R92 事故同形态)→ 语法检查仍过、**入口闸门红**;
+  恢复后绿。这直接证明了"语法过 ≠ 能启动"这条一直被忽略的分界。
+
 ## v1.1.79 — 断言库签名闸门: 一次揪出 16 处历史假绿
 
 - **起因**: 我第四次写反 `ok(...)` 的参数顺序(打印 "OK true" = 断言恒真)。本仓库存在
