@@ -96,5 +96,37 @@ ok("sample.json 的 meta.url 不指向真实内网域", badDomain.length === 0, 
   ok("闸门自证: 保留域/开源域不被误判", !isBad("example.com") && !isBad("httpbin.org"), "n/a");
 }
 
+// ---- 5. 样本数据本身必须脱敏(AGENTS §1.4) ----
+// R55 的 check_no_internal_domains 明确排除 samples/(理由: "samples 是脱敏样本库")——
+// 但它**从未验证过这句话**。实测: known/ 两个样本的 jsonl 里有 30 处真实内网域(midea 系)。
+// 这里补上"样本库真的脱敏了"的验证。
+{
+  const RESERVED_SUFFIX = [".invalid", ".test", ".example", ".localhost"];
+  const RESERVED = new Set(["example.com", "example.org", "localhost", "httpbin.org", "blazedemo.com", "postman-echo.com"]);
+  const leaked = [];
+  for (const rel of dirs) {
+    const p = path.join(SAMPLES, rel, "sample.jsonl");
+    if (!fs.existsSync(p)) continue;
+    for (const line of fs.readFileSync(p, "utf8").split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let e; try { e = JSON.parse(line); } catch { continue; }
+      const u = String(e.url || "");
+      const m = u.match(/^https?:\/\/([^/]+)/);
+      if (!m) continue;
+      // 去掉 URL 里的内嵌凭证(user:passwd@host), 取真正的 host
+      const host = m[1].includes("@") ? m[1].slice(m[1].lastIndexOf("@") + 1) : m[1];
+      // 保留域覆盖整个域(RFC 2606): icsuat.example.com 与 example.com 同等安全
+      if ([...RESERVED].some((r) => host === r || host.endsWith("." + r))) continue;
+      if (RESERVED_SUFFIX.some((x) => host.endsWith(x))) continue;
+      leaked.push(`${rel}: ${host}`);
+    }
+  }
+  ok("样本 jsonl 里的域名全部是保留域/公开演示站(无真实内网域)", leaked.length === 0, leaked.slice(0, 6));
+  // 闸门自证: 真实内网域必须被判为泄漏
+  const isLeak = (h) => ![...RESERVED].some((r) => h === r || h.endsWith("." + r)) && !RESERVED_SUFFIX.some((x) => h.endsWith(x));
+  ok("闸门自证: 真实内网域会被判泄漏", isLeak("icsuat.corp-midea.com") === true, "n/a");
+  ok("闸门自证: 保留域不被误判", isLeak("app.example.com") === false && isLeak("httpbin.org") === false, "n/a");
+}
+
 console.log(fails ? `=== sample evidence FAIL: ${fails} ===` : `=== sample evidence PASS (${dirs.length} 样本目录) ===`);
 process.exit(fails ? 1 : 0);
