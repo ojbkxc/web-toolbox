@@ -61,7 +61,7 @@ node test/check_xxx.js        # 单跑一个
 | bridge/test-doctor | doctor 端到端(真起 daemon 看输出与退出码, 不信源码字符串): 无 daemon → 端口项红且其余检查跑完 + 退出码 1;有 daemon+正确令牌 → 退出码 0 且端口/令牌/活体握手/协议/包版本/归档六项 PASS;有 daemon+错令牌 → **恰好 1 项**红(不连坐)+ 含 unauthorized;参数错误 → 退出码 2 一行明说不甩栈(v1.1.42) | v1.1.42 |
 | bridge/test-exporters | 导出口径单测(桥接层): pick 圈定语义/HAR 保真(不剔除静态·status=0·缺 duration→-1)/JMX·PY 压测口径(剔除静态/OPTIONS/SSE, 全噪音明确报错)/correlate 返回形态 + **单源证明**(猴补扩展 jmx.buildJmx / pyscript.buildPyScript / common.buildHar, bridge 输出必须立刻变)(v1.1.8) | v1.1.8 |
 
-| check_doc_counts | 文档计数/版本漂移闸门: README "共 N 个工具" ↔ 实现、文档间 .md 链接无断链、SECURITY.md 覆盖三道闸门等; 现算 suite 数(根 2+samples 1+test/ 发现+scan_conflicts+bridge 三层)并与 AGENTS/CLAUDE/test README/README/REVIEW 里的 "N 项/N/N/版本" 对拍, 不一致直接红(check_doc_counts 自身也算一个 suite)(v1.1.11) | v1.1.11 |
+| check_doc_counts | 文档计数/版本/docs 目录闸门: docs/ 两指南存在且 README 有链、 README "共 N 个工具" ↔ 实现、文档间 .md 链接无断链、SECURITY.md 覆盖三道闸门等; 现算 suite 数(根 2+samples 1+test/ 发现+scan_conflicts+bridge 三层)并与 AGENTS/CLAUDE/test README/README/REVIEW 里的 "N 项/N/N/版本" 对拍, 不一致直接红(check_doc_counts 自身也算一个 suite)(v1.1.11) | v1.1.11 |
 
 | check_bridge_schema | 工具 schema 可读性契约(源码级): 27 个工具的 inputSchema 顶层字段**全部**带 `.describe()`(模型靠它理解参数)、顶层 spread 只允许已描述的 filterShape、每个工具都有 title/description、`structured()` 调用与 outputSchema 成对、filterShape 自身字段也都带描述(v1.1.12) | v1.1.12 |
 

@@ -1,5 +1,16 @@
 # 更新记录
 
+## v1.1.51 — docs/ 目录: MCP 接入指南 + 排障指南
+
+- 参考仓库把"接入各客户端"与"排障"拆成 docs/ 独立文档; 本仓库此前这些内容散在
+  README(3.7 万字节)与 bridge/README 里, 新用户要翻很久。新增:
+  - `docs/mcp-clients.md`: 一分钟起步、Claude Code/Cursor/Trae 配置样例、连接拓扑
+    (daemon 为何必须常驻)、工具分层表、常见问题、验证命令;
+  - `docs/troubleshooting.md`: 按症状组织(连不上 / forbidden / 录不到 / 导出过大 /
+    重放差异 / 退出码 2), 每条"第一步查什么 → 根因 → 修法", 顶部引导先跑 doctor。
+- README 加"深入文档"入口表; 目录树补 docs/。
+- 闸门: `check_doc_counts` 断言两个指南存在且被 README 链接(删文件/改路径当轮即红)。
+
 ## v1.1.50 — 动态按钮绑定完整性
 
 - **问题形态**: 侧栏 11 个按钮是 innerHTML 模板动态生成的(格式卡片/链预览/详情),

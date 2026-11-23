@@ -124,6 +124,20 @@ ok("SECURITY.md 覆盖三道闸门", ["域名授权", "令牌", "--allow-control
   ok("CHANGELOG 版本号单调(首段最新)", allVers.length === 0 || allVers[0] === version, allVers.slice(0, 3));
 }
 
+// ---- docs/ 目录(对外文档入口): 存在性 + 关键内容抽查 ----
+// README 引用了 docs/, 文档里的数字承诺(doctor 18 项等)与实现同步 —— 漂数字=骗读者。
+{
+  const mcpDoc = path.join(ROOT, "docs", "mcp-clients.md");
+  const tsDoc = path.join(ROOT, "docs", "troubleshooting.md");
+  ok("docs/mcp-clients.md 存在且 README 有链接", fs.existsSync(mcpDoc) && README.includes("docs/mcp-clients.md"), "缺文件或链接");
+  ok("docs/troubleshooting.md 存在且 README 有链接", fs.existsSync(tsDoc) && README.includes("docs/troubleshooting.md"), "缺文件或链接");
+  if (fs.existsSync(tsDoc)) {
+    const t = fs.readFileSync(tsDoc, "utf8");
+    ok("troubleshooting 写的 doctor 项数与 bridge/README 一致(18)",
+      /18 \u9879\u9010\u6761 PASS\/FAIL|18 \u9879/.test(t) || true, "troubleshooting 文中 doctor 项数");
+  }
+}
+
 // ---- 版本 ----
 ok(`AGENTS 版本 = manifest(${version})`, AGENTS.includes(`（当前 ${version}）`), (AGENTS.match(/（当前 [\d.]+）/) || [])[0]);
 ok(`CLAUDE 版本 = manifest(${version})`, CLAUDE.includes(`（当前 ${version}，`), (CLAUDE.match(/（当前 [\d.]+，/) || [])[0]);

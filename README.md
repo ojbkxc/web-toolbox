@@ -117,6 +117,16 @@
 | **🖥 控制台日志** | 侧栏「控制台」页 | 录制期间采集页面 `console.*` 输出与未捕获异常(CDP `Runtime` domain, 与抓包同一 attach)。环形缓冲 500 条/256KB, 按级别着色与过滤(`error` / `level:warn` / 关键词), 可导出 JSON。与录制数据完全隔离——不进导出集、不占录制配额 | 无 |
 | **🖱 页面操作** | 侧栏「页面」页 | 截图(CDP, 不需要 all_urls) / 抓可交互元素结构 / 页面内执行 JS。与 MCP 的 `page_*` 工具**共用同一份实现**(`bridgeDispatch`), 只是传输走扩展内部消息, 不需要 bridge 连接。**v1.1.3 定位健壮性 + 返回值保真**: 点击/悬停前等坐标落定(sticky 头/入场动画/懒加载撑高页面时不再点空), 并做命中测试——目标被遮罩/弹窗压住时返回值带 `covered`/`coveredBy` 明说, 不再假装点到; 清空输入框改走「选中全部内容 + 真实 Backspace」, 受控组件与 contenteditable 都能清干净; 编辑器吞键清不掉时退回直接置空(经原型 setter 绕开 React 值追踪器), 回执 `clearedVia` 标明走的哪条路; `page_eval` 把 Map/Set/DOM 节点/循环引用规约成可读形态(旧实现对它们静默返回 `{}`); `page_press` 带完整 code/keyCode(旧实现只传 key, Tab/方向键失效); 快照标出 `[disabled]`。**v1.1.4 输入保真(可选)**: `page_type` 加 `keyByKey` —— 默认仍是 `insertText` 整串写入(快、对受控组件有效), 传 `keyByKey=true` 时逐字符派发真实 keydown/keypress/keyup, 供监听键盘事件的自动完成下拉/输入掩码/富文本编辑器使用(中文等非 ASCII 字符仍以文本方式插入, 长文本会明显变慢); 回执带 `typedVia` 标明实际走的输入路径 | Trae 插件的核心能力 |
 
+## 📚 深入文档
+
+| 文档 | 内容 |
+|---|---|
+| [docs/mcp-clients.md](./docs/mcp-clients.md) | 接入 Claude Code / Cursor / Trae: 拓扑、配置样例、常见问题、验证命令 |
+| [docs/troubleshooting.md](./docs/troubleshooting.md) | 排障: doctor 自检 → 症状 → 根因 → 修法(连不上 / forbidden / 录不到 / 导出过大 / 重放差异) |
+| [SECURITY.md](./SECURITY.md) | 安全模型: 三道闸门(域名授权 / 桥接令牌 / `--allow-control`)、数据落点、JS 执行面 |
+| [CHANGELOG.md](./CHANGELOG.md) | 仅记"改了什么 / 为什么 / 证据"; 完整评审过程见 [REVIEW.md](./REVIEW.md) |
+| [bridge/README.md](./bridge/README.md) | 桥接架构: 为什么 WebSocket、工具一览(27 个)、部署与守护 |
+
 ## AI 配置(重要)
 
 选项页新增 **"AI 分析接口"** 区:
@@ -297,6 +307,7 @@ web-toolbox/
 ├── popup/                 极简启动器(状态徽章 + 录制控制 + 打开侧栏)
 ├── sidepanel/             三页工作台(录制列表+详情 / 导出格式 / Cookie 桥)
 ├── options/               域名白名单 + AI 接口配置页
+├── docs/                  对外文档(mcp-clients 接入指南 / troubleshooting 排障)
 ├── test/                  e2e 走查回归集(42 check_* + 3 e2e_* + scan_conflicts + run_all.js 一键全量 67 项)
 └── icons/
 ```
