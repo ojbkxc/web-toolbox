@@ -4,8 +4,8 @@
 目标: 持续评审并完善本仓库; 每轮必须"取证 → 修根因 → 回归 → 记录", 不许只写结论。
 
 **门禁(2026-11-23 起)**
-- 扩展回归: `node test/run_all.js` → **63/63 PASS**(内含桥接 unit/exporters/doctor/smoke)
-- 桥接端到端: `node bridge/smoke.mjs` → **52 PASS / 0 FAIL**(任意 cwd)
+- 扩展回归: `node test/run_all.js` → **64/64 PASS**(内含桥接 unit/exporters/doctor/smoke)
+- 桥接端到端: `node bridge/smoke.mjs` → **74 PASS / 0 FAIL**(任意 cwd)
 - 桥接单测: `node bridge/unit.mjs` → **71 PASS / 0 FAIL**; `node bridge/test-exporters.mjs` → **46 PASS / 0 FAIL**
 - 桥接自检: `node bridge/src/doctor.js` → **18/18 PASS**(需先起 daemon; 含监听地址/活体握手/协议与包版本一致性/归档目录/令牌权限)
 
@@ -27,6 +27,26 @@
   (实现改了、文档忘了改, 当轮就红)。补表行后绿。
 - smoke +1(52), `check_bridge_schema` 的"七个机读工具"断言同步更新
   (bridge_status/net_list/net_get/net_hosts/correlate/tab_list/chain_replay)。
+
+### R58: 13 个工具"零测试提及" → 全部补上行为级覆盖
+
+- **实测缺口**(按工具名扫全部测试源): 27 个 MCP 工具里 **13 个从没被任何测试提到** ——
+  `rec_start`/`rec_stop`/`tab_navigate`/`page_type`/`page_press`/`page_hover`/
+  `page_select`/`page_scroll`/`page_wait`/`tab_activate`/`tab_close`/`page_screenshot`/`page_eval`。
+  工具表只证明**存在**, 没人证明"工具 → 协议 → 扩展"三段是通的。
+- **补**: smoke 新增 `[8] 控制类工具全覆盖`(在 `--allow-control` 环境真调 15 个工具, +14 条断言),
+  断言到"透传"层面: `rec_start.tabId=42`、`tab_navigate.url`、`page_type` 的
+  `text/submit/keyByKey`、`page_select` 的 `ref/value`、`page_scroll.deltaY`、`page_eval` 的 `script`、
+  `page_screenshot` 返回 `image` content(不走 JSON)等。
+- **新增** `test/check_tool_coverage.js`(闸门 + 2 条自证): 每个工具都必须在 smoke 里出现真调用形态
+  (`callTool(`/`call(`/`J(`), **注释行与纯文档提及不算**; 另验 "--allow-control 启动分支存在"
+  (否则控制类只测了 forbidden 分支)与"无幻影调用名"。
+- **踩坑(两次假绿, 都是自己的错)**:
+  1. 本节 `ok(...)` 参数顺序写反(`ok(msg, cond)`, 而 smoke 签名是 `ok(cond, msg)`)—— 断言恒真,
+     输出 12 行 "OK true"。**这是最危险的一种错**: 看起来全绿, 实际什么都没验。
+  2. 覆盖判定最初用"禁注释正则", 对**行内注释**仍判真; 改成逐行 `line.split("//")[0]` 后再判
+     才把注释形态排除掉 —— 自证里那条 `ghost_tool` 就是专门抓这个的。
+- 工具覆盖面从 14/27 提升到 **27/27**(行为级)。
 
 ### R57: AGENTS 硬规则 2/3/1 的机器执行(补上最后三条"纪律")
 

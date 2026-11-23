@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 63 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 64 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -90,6 +90,8 @@ node test/check_xxx.js        # 单跑一个
 | check_no_internal_domains | 硬规则 4 的机器执行: 扫扩展运行时代码(根 js + 三页面 + manifest, 21 文件), 除 RFC 2606 保留域/产品自有域/扩展 API 命名空间外**不许出现真实或内网域名**;含**闸门自证**(真实域样例必须被判红、保留域必须放过)防"0 命中其实是正则失效"(v1.1.44) | v1.1.44 |
 
 | check_repo_rules | AGENTS 硬规则 2/3/1 的机器执行: 测试里不许注释掉断言、不许框架级 .skip/.todo/xit(环境跳过 TC.skip 合法, 它会打 SKIP(env))、process.exit(0) 只能在末尾, 脚本/文档不许出现全量 add 用法, 仓库根无 package.json + 扩展运行时代码不引第三方 npm 包; **含闸门自证**(五组探针证明能分辨"描述规则"与"使用形态")(v1.1.46) | v1.1.46 |
+
+| check_tool_coverage | MCP 工具**行为级**覆盖闸门: 27 个工具必须每个都在 bridge/smoke.mjs 里被**真调过**(callTool/call/J 三种形态, 且不算注释与文档提及) —— 工具表只证明"存在", 这里证明"工具→协议→扩展三段通、参数没被吞";另断言 smoke 有 `--allow-control` 启动分支(控制类不是只测 forbidden)、调用的工具名无幻影;含自证(v1.1.47) | v1.1.47 |
 
 ## 维护约定
 

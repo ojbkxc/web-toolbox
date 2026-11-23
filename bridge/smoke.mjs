@@ -162,6 +162,21 @@ function makeMcpClient(proc) {
       if (method === "chain.replay") return [
         { verdict: "OK", method: "GET", path: "/x", recordedStatus: 200, liveStatus: 200, msg: "" },
       ];
+      // 控制类直通: 每个方法回一个可断言的最小结果(证明工具→协议→扩展三段都通)
+      if (method === "rec.start") return { ok: true, recState: "recording", tabId: params.tabId || 1 };
+      if (method === "rec.stop") return { ok: true, recState: "idle" };
+      if (method === "tab.navigate") return { ok: true, url: params.url };
+      if (method === "tab.activate") return { ok: true, tabId: params.tabId || 1 };
+      if (method === "tab.close") return { ok: true, closed: params.tabId || 1 };
+      if (method === "page.snapshot") return { ok: true, text: 'e1 button "登录"', refs: 1 };
+      if (method === "page.type") return { ok: true, typed: params.text, submit: !!params.submit, keyByKey: !!params.keyByKey };
+      if (method === "page.press") return { ok: true, key: params.key };
+      if (method === "page.hover") return { ok: true, ref: params.ref };
+      if (method === "page.select") return { ok: true, ref: params.ref, value: params.value };
+      if (method === "page.scroll") return { ok: true, ref: params.ref || null, deltaY: params.deltaY || 0 };
+      if (method === "page.wait") return { ok: true, condition: params.selector || params.text || params.ms || "" };
+      if (method === "page.screenshot") return { ok: true, dataUrl: "data:image/png;base64,AAAA" };
+      if (method === "page.eval") return { ok: true, value: "v" + params.script };
       return { __err: "unknown " + method };
     });
 
@@ -346,6 +361,73 @@ function makeMcpClient(proc) {
       "七个机读工具都带 outputSchema(" + withOutput.map((t) => t.name).join(",") + ")");
     const bad = tools.filter((t) => t.annotations && t.annotations.readOnlyHint === true && t.annotations.destructiveHint === true);
     ok(bad.length === 0, "没有工具同时标只读+破坏性" + (bad.length ? ": " + bad.map((t) => t.name).join(",") : ""));
+    proc.kill();
+    await sleep(200);
+  }
+
+  // ============ 8. 控制类工具全覆盖(工具→协议→扩展 三段打通 + 参数透传) ============
+  // 这 13 个工具此前"零测试提及"(只有 check_bridge_annotations 的静态标注断言)。
+  // 这里逐个真调 MCP 工具, 断言: ①不报错 ②结果里能看到我们传的参数(参数没被工具层吞掉)。
+  {
+    console.log("\n[8] 控制类工具全覆盖");
+    const proc = startBridge(["--allow-control"]);
+    await sleep(700);
+    const { ws } = await connectRetry(TOKEN);
+    serveExt(ws, (m, params) => {
+      if (m === "rec.status") return { recState: "idle", count: 0 };
+      if (m === "console.read") return { ok: true, total: 1, entries: [{ level: "error", text: "boom" }] };
+      if (m === "console.clear") return { ok: true, cleared: 1 };
+      if (m === "rec.start") return { ok: true, recState: "recording", tabId: params.tabId || 1 };
+      if (m === "rec.stop") return { ok: true, recState: "idle" };
+      if (m === "tab.navigate") return { ok: true, url: params.url };
+      if (m === "tab.activate") return { ok: true, tabId: params.tabId || 1 };
+      if (m === "tab.close") return { ok: true, closed: params.tabId || 1 };
+      if (m === "page.snapshot") return { ok: true, text: 'e1 button "登录"', refs: 1 };
+      if (m === "page.type") return { ok: true, typed: params.text, submit: !!params.submit, keyByKey: !!params.keyByKey };
+      if (m === "page.press") return { ok: true, key: params.key };
+      if (m === "page.hover") return { ok: true, ref: params.ref };
+      if (m === "page.select") return { ok: true, ref: params.ref, value: params.value };
+      if (m === "page.scroll") return { ok: true, ref: params.ref || null, deltaY: params.deltaY || 0 };
+      if (m === "page.wait") return { ok: true, condition: params.selector || params.text || params.ms || "" };
+      if (m === "page.screenshot") return { ok: true, dataUrl: "data:image/png;base64,AAAA" };
+      if (m === "page.eval") return { ok: true, value: "v" + params.script };
+      return { __err: "unknown " + m };
+    });
+    const mcp = makeMcpClient(proc);
+    await mcp.init();
+    const call = (name, args) => mcp.callTool(name, args || {});
+    const J = async (name, args) => {
+      const r = await call(name, args);
+      if (r.isError) return { __err: r.content[0].text };
+      try { return JSON.parse(r.content[0].text); } catch { return r.content[0].text; }
+    };
+
+    const recS = await J("rec_start", { tabId: 42 });
+    ok(recS && recS.tabId === 42, "rec_start 透传 tabId");
+    ok((await J("rec_stop", {})).recState === "idle", "rec_stop 回到 idle");
+    const nav = await J("tab_navigate", { url: "https://a.com/x" });
+    ok(nav && nav.url === "https://a.com/x", "tab_navigate 透传 url");
+    ok((await J("tab_activate", { tabId: 7 })).tabId === 7, "tab_activate 透传 tabId");
+    ok((await J("tab_close", { tabId: 7 })).closed === 7, "tab_close 透传 tabId");
+    const snap = await J("page_snapshot", { maxChars: 5000 });
+    ok(snap && snap.refs === 1 && /button/.test(String(snap.text)), "page_snapshot 返回 refs 结构");
+    const typed = await J("page_type", { ref: "e1", text: "alice", submit: true, keyByKey: true });
+    ok(typed && typed.typed === "alice" && typed.submit === true && typed.keyByKey === true, "page_type 透传 text/submit/keyByKey");
+    ok((await J("page_press", { key: "Enter" })).key === "Enter", "page_press 透传 key");
+    ok((await J("page_hover", { ref: "e2" })).ref === "e2", "page_hover 透传 ref");
+    const sel = await J("page_select", { ref: "e3", value: "B" });
+    ok(sel && sel.ref === "e3" && sel.value === "B", "page_select 透传 ref/value");
+    ok((await J("page_scroll", { deltaY: -300 })).deltaY === -300, "page_scroll 透传 deltaY");
+    ok((await J("page_wait", { selector: "#done" })).condition === "#done", "page_wait 透传 selector");
+    // page_screenshot 返回 image content(不走 JSON), 单独断言 content 类型
+    const shot = await call("page_screenshot", {});
+    ok(shot && shot.content && shot.content[0] && shot.content[0].type === "image", "page_screenshot 返回 image content");
+    ok((await J("page_eval", { script: "document.title" })).value === "vdocument.title", "page_eval 透传 script");
+    const crd = await J("console_read", { level: "error" });
+    ok(crd && crd.total === 1 && crd.entries[0].level === "error", "console_read 透传 level 且返回条目");
+    ok((await J("console_clear", {})).cleared === 1, "console_clear 清空并回执");
+
+    ws.close();
     proc.kill();
     await sleep(200);
   }
