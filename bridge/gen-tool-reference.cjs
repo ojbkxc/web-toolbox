@@ -6,6 +6,26 @@ const path = require("path");
 const ROOT = "D:/GitHub/web-toolbox";
 const src = fs.readFileSync(path.join(ROOT, "bridge", "src", "tools.js"), "utf8");
 
+// 抽 filterShape(共享过滤参数) —— 展开参数表时要用真实字段, 否则文档只留一行占位,
+// 读者查不到 method/status/statusMin/... (R81 实测缺口: 5 个工具都用它, 文档一处未列)。
+const shapeDefs = {};
+for (const m of src.matchAll(/const (filterShape) = \{([\s\S]*?)\n\};/g)) {
+  const fields = [];
+  // 逐行解析前必须剥 \r: split(/\r?\n/) 清不掉"最后一行"(其后没有 \n 可切),
+  // 行尾 \r 会让下面 ^…$ 的锚失效 —— R81 实测: 每个形状最后一行都被静默丢掉。
+  for (const rawLine of m[2].split(/\r?\n/)) {
+    const line = rawLine.replace(/\r/g, "");
+    const fm = line.match(/^\s{2}([A-Za-z_][\w]*):\s*(.+)$/);
+    if (!fm) continue;
+    const d = (fm[2].match(/describe\("([^"]*)"\)/) || [])[1] || "";
+    const opt = /\.optional\(\)/.test(fm[2]) ? "?" : "";
+    const type = (fm[2].match(/^z\.(\w+)/) || [])[1] || "";
+    fields.push({ name: fm[1] + opt, type, d });
+  }
+  shapeDefs[m[1]] = fields;
+}
+console.log("共享参数形状:", Object.keys(shapeDefs).map((k) => k + "(" + shapeDefs[k].length + " 字段)").join(", "));
+
 // 抽 annotation 表
 const annBlock = src.slice(src.indexOf("const ANNOTATIONS = {"), src.indexOf("};", src.indexOf("const ANNOTATIONS = {")));
 const ann = {};
@@ -83,7 +103,9 @@ for (const [g, ns] of groups) {
       L.push("|---|---|---|");
       for (const p of t.params) {
         if (p.spread) {
-          L.push("| ..." + p.spread + " | | 通用过滤(见 net_list 的过滤参数) |");
+          // 展开共享形状为真实字段(带说明), 让文档可独立使用
+          const fields = shapeDefs[p.spread] || [];
+          for (const sf of fields) L.push("| \`" + sf.name + "\` | " + sf.type + " | " + sf.d + " |");
         } else {
           L.push("| `" + p.name + "` | " + p.type + " | " + p.d + " |");
         }

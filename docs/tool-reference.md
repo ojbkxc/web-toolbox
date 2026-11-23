@@ -17,7 +17,12 @@
 
 | 参数 | 类型 | 说明 |
 |---|---|---|
-| ...filterShape | | 通用过滤(见 net_list 的过滤参数) |
+| `method?` | string | HTTP 方法过滤, 如 POST |
+| `status?` | number | 精确状态码, 如 500 |
+| `statusMin?` | number | 状态码下界, 如 400 只看失败 |
+| `statusMax?` | number | 状态码上界 |
+| `pathIncludes?` | string | 路径子串, 如 /order |
+| `hostIncludes?` | string | URL 子串, 如 api.example.com |
 | `limit?` | number | 最多返回条数, 默认 50, 上限 500 |
 | `offset?` | number | 跳过前 N 条(分页) |
 
@@ -60,7 +65,12 @@
 
 | 参数 | 类型 | 说明 |
 |---|---|---|
-| ...filterShape | | 通用过滤(见 net_list 的过滤参数) |
+| `method?` | string | HTTP 方法过滤, 如 POST |
+| `status?` | number | 精确状态码, 如 500 |
+| `statusMin?` | number | 状态码下界, 如 400 只看失败 |
+| `statusMax?` | number | 状态码上界 |
+| `pathIncludes?` | string | 路径子串, 如 /order |
+| `hostIncludes?` | string | URL 子串, 如 api.example.com |
 | `threads?` | number | 线程数, 默认 1(巡检安全口径) |
 | `maxChars?` | number | 产物字符上限, 默认 2000000; 超限报错而非截断 |
 
@@ -284,7 +294,12 @@
 
 | 参数 | 类型 | 说明 |
 |---|---|---|
-| ...filterShape | | 通用过滤(见 net_list 的过滤参数) |
+| `method?` | string | HTTP 方法过滤, 如 POST |
+| `status?` | number | 精确状态码, 如 500 |
+| `statusMin?` | number | 状态码下界, 如 400 只看失败 |
+| `statusMax?` | number | 状态码上界 |
+| `pathIncludes?` | string | 路径子串, 如 /order |
+| `hostIncludes?` | string | URL 子串, 如 api.example.com |
 | `ids?` | array | 只重放指定条目 id; 省略则重放全部(遵守过滤词) |
 | `timeoutMs?` | number | 单条超时毫秒, 默认 30000 |
 | `tabId?` | number | 在哪个标签页重放, 省略用活动页 |

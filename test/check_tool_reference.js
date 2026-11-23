@@ -34,6 +34,21 @@ if (fs.existsSync(gen) && fs.existsSync(target)) {
     const regCount = [...toolsSrc.matchAll(/\bregister\("([^"]+)"/g)].length;
     const docTools = (fs.readFileSync(target, "utf8").match(/^### `[^`]+`/gm) || []).length;
     ok("tool-reference.md 工具数 = tools.js register 数(防抽取被正则漏掉)", regCount === docTools, { regCount, docTools });
+    // 共享参数形状(filterShape)必须**展开成真实字段**: 文档此前只留一行占位,
+    // 5 个工具的过滤参数无处可查(R81)。这里守恒校验: 每个用 ...filterShape 的工具,
+    // 其参数表都必须出现全部共享字段名。
+    const shapeBody = (toolsSrc.match(/const filterShape = \{([\s\S]*?)\n\};/) || [])[1] || "";
+    const shapeFields = shapeBody.split(/\r?\n/)
+      .map((l) => l.replace(/\r/g, ""))
+      .filter((l) => /^\s{2}[A-Za-z_]\w*:/.test(l))
+      .map((l) => l.trim().split(":")[0]);
+    const docText = fs.readFileSync(target, "utf8");
+    const missing = shapeFields.filter((k) => !docText.includes("`" + k + "`") && !docText.includes("`" + k + "?`"));
+    ok(
+      "共享过滤参数已展开为真实字段(不缺 " + shapeFields.length + " 字段中的任何一个)",
+      shapeFields.length > 0 && missing.length === 0,
+      { fields: shapeFields, missing },
+    );
   } else {
     // 保留生成版会覆盖用户手改 —— 恢复原文件, 红给 diff
     fs.writeFileSync(target, orig);

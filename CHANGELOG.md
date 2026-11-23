@@ -1,5 +1,21 @@
 # 更新记录
 
+## v1.1.68 — 工具参考丢失共享过滤参数(CRLF 末行解析 + 展开缺失)
+
+- **实证缺口**: `net_list`/`export_har`/`export_jmx`/`export_python`/`chain_replay` 五个工具
+  共用 `filterShape`(method/status/statusMin/statusMax/pathIncludes/hostIncludes), 而
+  tool-reference 里这五个工具的过滤参数只有**一行占位** `...filterShape` —— 用户按
+  mcp-clients.md 的指引去查参数却查不到字段名。
+- **两个根因**:
+  1. 生成器解析共享形状时用 `split(/\r?\n/)` 逐行匹配 `^\s{2}name:` —— **末行没有 `\n` 可切,
+     残留的 `\r` 让 `$` 锚失效**, 每个形状的最后一行(`hostIncludes`)被静默丢掉。这是
+     "CRLF 必须剥 \r"教训的又一个变体(此前只防了 ```split``` 场景)。
+  2. 更早的实现干脆不展开共享形状, 只写占位行。
+- **修**: 逐行 `replace(/\r/g,"")` 后解析; spread 时把形状字段展开成真实参数行(带类型与
+  说明); `check_tool_reference` 补"共享形状字段必须全部出现在文档里"守恒断言。
+- **负向验证**: 把展开改回占位 → 闸门红, 列出 `missing:[method,status,statusMin,statusMax,
+  hostIncludes]`; 恢复后绿。
+
 ## v1.1.67 — tool-reference 补齐同族盲区(条目数守恒)
 
 - **对称排查**: R79 在 skills.md 发现"生成器正则漏项 + 逐字节闸门两侧同漏"后, 回头查
