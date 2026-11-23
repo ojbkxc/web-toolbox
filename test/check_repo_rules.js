@@ -40,7 +40,7 @@ for (const abs of testFiles) {
   lines.forEach((line, i) => {
     const t = line.trim();
     // A: 被注释掉的断言调用
-    if (/^\/{1,2}\s*(ok|assert)\s*\(/.test(t)) commented.push(`${rel}:${i + 1}`);
+    if (/^\/{1,2}\s*(ok|assert)(?:\s*\(|\.\w+\s*\()/.test(t)) commented.push(`${rel}:${i + 1}`);
     // B: 框架级跳过(排除 TC.skip 的环境跳过); 注释行豁免 —— 注释里写规则名不算放行
     const isCommentB = /^\s*(\/\/|\*|\/\*)/.test(line);
     const envSkip = /\bTC\.skip\s*\(/.test(line);
