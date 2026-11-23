@@ -25,10 +25,21 @@ const ok = (name, cond, got) => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 复用就绪探测(代替固定 sleep): 起完 daemon 立即探, 实测快 ~1.4s/处。
+let PORT_FOR_READY = 0;   // 调用方起 daemon 前设置, 供就绪探测用
 async function waitDaemonUp() {
-  for (let i = 0; i < 40; i++) {
-    await sleep(125);
-    try { const c = await Promise.race([connect(), new Promise((_, rej) => setTimeout(() => rej(new Error("fast")), 500))]); c.ws.close(); return true; } catch { /* 还没起(500ms 快速失败, 不吃满 4s connect 超时) */ }
+  // 只探 TCP 端口: "就绪"= 端口在监听。不在这里做 WS 握手(那要令牌与协议, 且握手失败
+  // 会被误判成"daemon 没起"—— 本文件正是要测令牌/协议错的场景, 就绪判定不能预设它们对)。
+  const net = await import("node:net");
+  for (let i = 0; i < 60; i++) {
+    const up = await new Promise((resolve) => {
+      const sock = net.connect({ host: "127.0.0.1", port: PORT_FOR_READY });
+      const done = (v) => { sock.destroy(); resolve(v); };
+      sock.on("connect", () => done(true));
+      sock.on("error", () => done(false));
+      setTimeout(() => done(false), 300);
+    });
+    if (up) return true;
+    await sleep(150);
   }
   return false;
 }
@@ -49,11 +60,11 @@ try {
   {
     console.log("\n[doctor] 无 daemon");
     const r = runDoctor(["--port", "19731"], { WEB_TOOLBOX_TOKEN: TOKEN, WEBTOOLBOX_ARCHIVE_DIR: tmpArchive });
-    ok(r.code === 1, "退出码 1(有项失败)", r.code);
-    ok(/\[FAIL\] daemon 端口在监听/.test(r.out) && /daemon 没起|--daemon/.test(r.out), "端口项 FAIL 且给出下一步", r.out.slice(0, 200));
-    ok(/\[PASS\] node 版本/.test(r.out) && /\[PASS\] 扩展 manifest/.test(r.out), "失败时仍跑完其余检查(不是半路退出)");
-    ok(/doctor FAIL: \d+\/\d+/.test(r.out), "末尾汇总列出失败项", r.out.slice(-120));
-    ok(!/令牌被 daemon 接受/.test(r.out), "无 daemon 时不做活体握手(不连坐)");
+    ok("退出码 1(有项失败)", r.code === 1, r.code);
+    ok("端口项 FAIL 且给出下一步", /\[FAIL\] daemon 端口在监听/.test(r.out) && /daemon 没起|--daemon/.test(r.out), r.out.slice(0, 200));
+    ok("失败时仍跑完其余检查(不是半路退出)", /\[PASS\] node 版本/.test(r.out) && /\[PASS\] 扩展 manifest/.test(r.out));
+    ok("末尾汇总列出失败项", /doctor FAIL: \d+\/\d+/.test(r.out), r.out.slice(-120));
+    ok("无 daemon 时不做活体握手(不连坐)", !/令牌被 daemon 接受/.test(r.out));
   }
 
   // ② 有 daemon + 正确令牌
@@ -61,29 +72,30 @@ try {
     console.log("\n[doctor] 有 daemon(两个令牌 case 共用一个 daemon, 冷启动只付一次)");
 {
   const PORT = 19732;
+  PORT_FOR_READY = PORT;
   const daemon = spawn(process.execPath, [ENTRY, "--daemon", "--port", String(PORT), "--quiet",
     "--archive-dir", tmpArchive], {
     env: { ...process.env, WEB_TOOLBOX_TOKEN: TOKEN }, stdio: "ignore", windowsHide: true,
   });
-  if (!(await waitDaemonUp())) { ok(false, "daemon 就绪"); }
+  if (!(await waitDaemonUp())) { ok("daemon 就绪", false); }
   try {
     // case A: 正确令牌
     console.log("  · 正确令牌");
     const r = runDoctor(["--port", String(PORT)], { WEB_TOOLBOX_TOKEN: TOKEN });
-    ok(r.code === 0, "退出码 0", { code: r.code, tail: r.out.slice(-200) });
+    ok("退出码 0", r.code === 0, { code: r.code, tail: r.out.slice(-200) });
     for (const name of ["daemon 端口在监听", "令牌可用", "令牌被 daemon 接受", "协议版本一致", "daemon 版本 = 包版本", "归档目录可写"]) {
-      ok(r.out.includes("[PASS] " + name), `${name} → PASS`, r.out.split("\n").filter((l) => l.includes(name)));
+      ok(`${name} → PASS`, r.out.includes("[PASS] " + name), r.out.split("\n").filter((l) => l.includes(name)));
     }
-    ok(/doctor PASS: \d+\/\d+/.test(r.out), "汇总显示全项通过", r.out.slice(-80));
-    ok(/归档保留期/.test(r.out) && /归档体积/.test(r.out), "给出归档保留期与体积两行 INFO");
+    ok("汇总显示全项通过", /doctor PASS: \d+\/\d+/.test(r.out), r.out.slice(-80));
+    ok("给出归档保留期与体积两行 INFO", /归档保留期/.test(r.out) && /归档体积/.test(r.out));
     // case B: 错令牌(同一个 daemon, 不重启)
     console.log("  · 错令牌");
     const r2 = runDoctor(["--port", String(PORT)], { WEB_TOOLBOX_TOKEN: "wrong-token-xxxxxxxx" });
-    ok(r2.code === 1, "退出码 1", r2.code);
-    ok(r2.out.includes("[FAIL] 令牌被 daemon 接受"), "令牌活体项 FAIL");
-    ok(/unauthorized/i.test(r2.out), "失败原因含 unauthorized", r2.out.split("\n").filter((l) => l.includes("令牌被")));
-    const failedLines = (r2.out.match(/\\[FAIL\\]/g) || []).length;
-    ok(failedLines === 1, "恰好 1 项失败(不连坐端口/协议/版本)", failedLines);
+    ok("退出码 1", r2.code === 1, r2.code);
+    ok("令牌活体项 FAIL", r2.out.includes("[FAIL] 令牌被 daemon 接受"));
+    ok("失败原因含 unauthorized", /unauthorized/i.test(r2.out), r2.out.split("\n").filter((l) => l.includes("令牌被")));
+    const failedLines = (r2.out.match(/\[FAIL\]/g) || []).length;
+    ok("恰好 1 项失败(不连坐端口/协议/版本)", failedLines === 1, failedLines);
   } finally {
     daemon.kill();
     await sleep(300);
@@ -100,9 +112,9 @@ try {
 }
 console.log("\n[doctor] 参数错误");
     const r = runDoctor(["--port", "0"], { WEB_TOOLBOX_TOKEN: TOKEN });
-    ok(r.code === 2, "退出码 2(参数错误)", r.code);
-    ok(/\[FAIL\] 参数解析/.test(r.out) && /1\.\.65535/.test(r.out), "一行明说且含正确用法", r.out.slice(0, 160));
-    ok(!/at Object\.<anonymous>/.test(r.out), "不甩栈(无 at Object.<anonymous>)");
+    ok("退出码 2(参数错误)", r.code === 2, r.code);
+    ok("一行明说且含正确用法", /\[FAIL\] 参数解析/.test(r.out) && /1\.\.65535/.test(r.out), r.out.slice(0, 160));
+    ok("不甩栈(无 at Object.<anonymous>)", !/at Object\.<anonymous>/.test(r.out));
   }
 } finally {
   fs.rmSync(tmpArchive, { recursive: true, force: true });

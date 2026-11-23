@@ -544,7 +544,7 @@ await waitPort(PORT);
       try { const probe = await connect(TOKEN, PROTOCOL_VERSION, daemonUrl); probe.ws.close(); up = true; } catch { /* 还没起 */ }
     }
     if (!up) {
-      ok("独立 daemon 就绪", false, "6s 内未监听端口 " + DPORT);
+      ok(false, "独立 daemon 就绪(6s 内未监听端口 " + DPORT + ")");
       try { daemon.kill(); } catch { /* ignore */ }
     } else {
       const mcpProc = spawn(process.execPath, [ENTRY, "--port", String(DPORT), "--quiet", "--allow-control"], {

@@ -18,7 +18,13 @@ import { makeRegister, registerTools } from "./src/tools.js";
 const { FRAME, ERR, PROTOCOL_VERSION, WS_PATH } = protocol;
 const TOKEN = "unit-token-xyz";
 let pass = 0, fail = 0;
+// 断言签名: ok(name, cond, got)。**参数反序是这套断言库唯一的静默失效方式**
+// (ok(cond, "msg") 里字符串恒真 → 永远绿, 打印 "OK true")。本项目已因此栽过四次,
+// 所以在库层拦住: 第一个参数是字符串以外的类型就直接抛, 不让它变成假绿。
 const ok = (name, cond, got) => {
+  if (typeof name !== "string") {
+    throw new Error("ok() 参数顺序写反了: 第一个参数必须是断言名(字符串), 收到 " + typeof name);
+  }
   if (cond) { pass++; console.log("  OK " + name); }
   else { fail++; console.log("  ✗ FAIL " + name + " → " + JSON.stringify(got)); }
 };
@@ -431,6 +437,34 @@ function extHello(extra = {}) {
     "bridgeSettleRect 统一校验 ref(不依赖调用方)",
     /async function bridgeSettleRect\(tabId, ref\) \{[\s\S]{0,200}\^e\\d\+\$/.test(bc),
   );
+}
+
+
+// ---- archive 可观测性 + 只写不读口径(v1.1.79) ----
+// 缺口: 开了 --archive-dir 无从判断归档是否在工作(用户只能翻目录); 且归档侧注释曾承诺
+// "AI 能回看更长历史", 而工具面根本没有读取入口 —— 承诺与实现必须一致(这里钉"只写不读")。
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wt-arch-"));
+  const a = new Archive(dir, { keepDays: 0 });
+  await a.init();
+  const empty = a.stats();
+  ok("stats: 已启用", empty.enabled === true)
+  ok("stats: 空目录 → 0/0/null", empty.files === 0 && empty.lines === 0 && empty.latest === null)
+  a.append([{ id: "x1", method: "GET", url: "https://a.test/x" }, { id: "x2", method: "GET", url: "https://a.test/y" }]);
+  await new Promise((r) => setTimeout(r, 60));
+  a.close();
+  const filled = a.stats();
+  ok(`stats: 写 2 条 → 1 文件 2 行(实得 ${filled.files}/${filled.lines})`, filled.files === 1 && filled.lines === 2);
+  ok("stats: bytes 与 latest 日期", filled.bytes > 0 && /^\d{4}-\d{2}-\d{2}$/.test(filled.latest))
+  fs.rmSync(dir, { recursive: true, force: true });
+
+  // 只写不读: 工具面不暴露任何 archive 读方法
+  const toolsSrc = fs.readFileSync(new URL("./src/tools.js", import.meta.url), "utf8");
+  const idxSrc = fs.readFileSync(new URL("./src/index.js", import.meta.url), "utf8");
+  const hook = idxSrc.slice(idxSrc.indexOf("registerTools(server, hub,"));
+  ok("index 传给 tools 的是真 archive(不是写死 stub)", !/archive: \{ append: \(\) => 0/.test(hook))
+  ok("工具面没有归档读取入口(只写不读, 与注释口径一致)", !/archive\.(read|query|list|scan|load)\b/.test(toolsSrc))
+  ok("bridge_status 暴露 archive 状态", /archive: typeof ctx\.archive\?\.stats/.test(toolsSrc))
 }
 
 console.log(`\n=== bridge unit: ${pass} PASS / ${fail} FAIL ===`);

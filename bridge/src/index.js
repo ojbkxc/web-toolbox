@@ -73,14 +73,22 @@ if (source === "generated") {
   log(`请把这串令牌填进扩展配置页: ${token}`);
 }
 
+// 归档实例工厂: daemon 模式与单进程模式各建自己的(两者都可能是"真正在写归档"的那一侧)。
+// 为什么抽出来: 内联在 runDaemon 里的 const 在 runMcpServer 里不可见 —— 直接把 stub 换成
+// 该变量会让 MCP 启动即 ReferenceError(2026-11-24 实测: 所有客户端 initialize 超时)。
+async function makeArchive() {
+  const a = new Archive(opts.archiveDir, { keepDays: opts.archiveKeepDays });
+  if (!(await a.init())) log(`归档目录不可写, 归档关闭: ${opts.archiveDir}`);
+  else if (a.keepDays > 0 && a.pruned && a.pruned.removed.length) {
+    log(`归档清理: 删除 ${a.pruned.removed.length} 个超过 ${a.keepDays} 天的日归档`);
+  }
+  return a;
+}
+
 // ============================================================ daemon 模式
 // 只开 WS, 保持进程常驻, 不接 MCP。
 async function runDaemon() {
-  const archive = new Archive(opts.archiveDir, { keepDays: opts.archiveKeepDays });
-  if (!(await archive.init())) log(`归档目录不可写, 归档关闭: ${opts.archiveDir}`);
-  else if (archive.keepDays > 0 && archive.pruned && archive.pruned.removed.length) {
-    log(`归档清理: 删除 ${archive.pruned.removed.length} 个超过 ${archive.keepDays} 天的日归档`);
-  }
+  const archive = await makeArchive();
 
   const hub = new Hub({
     host: opts.host, port: opts.port, token,
@@ -338,7 +346,10 @@ if (hasDaemon) {
 // ============================================================ MCP
 async function runMcpServer() {
   const server = new McpServer({ name: "web-toolbox", version: VERSION });
-  registerTools(server, hub, { archive: { append: () => 0, close: () => {} }, allowControl: opts.allowControl });
+  // 单进程模式下本进程就是"daemon", 归档要由它写; 代理模式下 daemon 那边已有自己的归档 ——
+  // 建了也不会重复落盘(append 只在收到 harvest 事件时触发, 代理模式不接该事件)。
+  const archive = await makeArchive();
+  registerTools(server, hub, { archive, allowControl: opts.allowControl });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

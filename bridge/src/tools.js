@@ -239,6 +239,7 @@ export function registerTools(server, hub, ctx) {
     outputSchema: {
       connected: z.boolean(),
       bridge: z.record(z.string(), z.any()).optional(),
+      archive: z.record(z.string(), z.any()).optional(),
       extension: z.record(z.string(), z.any()).optional(),
       allowControl: z.boolean().optional(),
       daemonAllowControl: z.boolean().nullable().optional(),
@@ -259,6 +260,9 @@ export function registerTools(server, hub, ctx) {
       // 两端版本并列返回: 版本错位是最高频的"连上了但方法不认"根因, 不给对比入口用户只能猜
       // (errors.js 的 UNKNOWN_METHOD / PROTOCOL_MISMATCH hint 直接指向这两个字段)。
       bridge: { version: BRIDGE_VERSION, protocol: PROTOCOL_VERSION },
+      // 归档现状: 开了 --archive-dir 却无从判断是否在工作(用户只能翻目录)。
+      // 口径: 归档**只写不读** —— 这里只报"有没有/写了多少", 不提供查询(工具面不暴露读)。
+      archive: typeof ctx.archive?.stats === "function" ? ctx.archive.stats() : undefined,
       extension: hub.extInfo || undefined,
       allowControl: ctx.allowControl,
       daemonAllowControl: typeof daemonAllow === "boolean" ? daemonAllow : null,
