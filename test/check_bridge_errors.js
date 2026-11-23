@@ -28,6 +28,10 @@ const ok = (name, cond, got) => {
   const localCodes = Object.values(E.LOCAL);
   const missingLocal = localCodes.filter((c) => !E.LOCAL_HINTS[c]);
   ok("业务码全部有错误文案", missingLocal.length === 0, missingLocal);
+  // knownCodes() 是给人/脚本"枚举全部码"用的: 它必须等于两表并集(少一个 = 有码查不到文案)
+  const known = E.knownCodes().sort();
+  const union = [...new Set([...Object.keys(E.ERROR_HINTS), ...Object.keys(E.LOCAL_HINTS)])].sort();
+  ok("knownCodes() = 线协议码 ∪ 业务码", JSON.stringify(known) === JSON.stringify(union), { known, union });
 
   // ---- 2. 每条都有 text + hint ----
   for (const [code, m] of Object.entries(E.ERROR_HINTS)) {

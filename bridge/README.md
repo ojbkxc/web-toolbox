@@ -94,9 +94,9 @@ claude mcp add web-toolbox -s user -- node D:/GitHub/web-toolbox/bridge/src/inde
 | `net_list` | 列出抓到的请求（摘要，可过滤/分页） | | ✓ |
 | `net_get` | 按 id 取完整请求+响应正文（结构化 `truncated`/`originalChars`/`maxBody`，不用再猜是否被截断） | | ✓ |
 | `net_hosts` | 抓包域名分布（诊断漏录） | | ✓ |
-| `export_har` | 导出 HAR 1.2 | | |
-| `export_jmx` | 导出 JMeter 脚本 | | |
-| `export_python` | 导出 requests 重放脚本 | | |
+| `export_har` | 导出 HAR 1.2（产物超限明确报错, 不返回半截） | | |
+| `export_jmx` | 导出 JMeter 脚本（产物超限明确报错, 不返回半截） | | |
+| `export_python` | 导出 requests 重放脚本（产物超限明确报错） | | |
 | `correlate` | 自动关联动态值 | | ✓ |
 | `tab_list` | 列出标签页（结构化 `{total, tabs}`） | | ✓ |
 | `rec_start` / `rec_stop` | 开始/停止录制 | ✓ | |
@@ -229,7 +229,7 @@ node src/doctor.js      # 18 项逐条 PASS/FAIL, 每条带"下一步"
 ## 自检
 
 ```bash
-node bridge/smoke.mjs    # 端到端: 鉴权/请求响应/事件/控制开关/未连接/工具注解/错误语义/结构化返回/字节口径/分页边界/正文截断/开关不一致, 52 项(任意 cwd 都可跑)
+node bridge/smoke.mjs    # 端到端: 鉴权/请求响应/事件/控制开关/未连接/工具注解/错误语义/结构化返回/字节口径/分页/截断/开关不一致/导出体积守卫, 58 项
 node bridge/unit.mjs     # 内部单测: register 自校验/config 参数守卫(--flag=value)/hub 拒绝分支/代理转发/断线失败/archive 落盘+权限+保留期清理/net_list 3000 条规模, 62 项(需 npm install)
 node bridge/test-exporters.mjs  # 导出口径单测 + 单源证明 + 清洗降级 + 异常形态(HEAD/空 body/204/超长 query/PATCH/OPTIONS/multipart/HAR size), 46 项
 cd bridge && npm test    # 聚合: unit(51) → exporters(29) → smoke(43), 任一层红即退出非零

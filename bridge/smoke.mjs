@@ -350,6 +350,44 @@ function makeMcpClient(proc) {
     await sleep(200);
   }
 
+  // ============ 5b. 导出产物体积守卫 ============
+  // 脚本类产物截断即废文件(HAR 半截不是 HAR, JMX 半截打不开) —— 超限必须明确失败并给下一步,
+  // 而不是"看起来成功"。这里用 maxChars=1000 触发, 断言码/文案/建议三件事。
+  {
+    console.log("\n[5b] 导出体积守卫");
+    const proc = startBridge(["--allow-control"]);
+    await sleep(700);
+    const { ws } = await connectRetry(TOKEN);
+    serveExt(ws, (m) => {
+      if (m === "net.list") {
+        return Array.from({ length: 40 }, (_, i) => ({
+          id: "b" + i, method: "POST", url: "https://a.com/api/item/" + i, path: "/api/item/" + i,
+          query: "page=" + i, headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ a: i, b: "x".repeat(80) }), status: 200,
+          response: JSON.stringify({ ok: true, data: "y".repeat(120) }), mime: "application/json", ts: "", durationMs: 10,
+        }));
+      }
+      return { __err: "unknown " + m };
+    });
+    const mcp = makeMcpClient(proc);
+    await mcp.init();
+
+    const r = await mcp.callTool("export_jmx", { maxChars: 1000 });
+    const t = (r.content && r.content[0] && r.content[0].text) || "";
+    ok(r.isError === true, "超限 → isError(不返回半截脚本)");
+    ok(/^错误\[bad_state\]: /.test(t), "超限 → 机读码 bad_state", t.slice(0, 60));
+    ok(/export_jmx 产物过大/.test(t) && /超过上限 1000/.test(t), "文案点名工具与上限", t.slice(0, 120));
+    ok(/下一步: /.test(t) && /maxChars=/.test(t), "下一步给出可执行方法(调高 maxChars)", t.slice(-160));
+    ok(/hostIncludes|pathIncludes|statusMin/.test(t), "下一步给出缩小范围的具体参数", t.slice(-160));
+
+    const rNoLimit = await mcp.callTool("export_python", {});
+    ok(rNoLimit.isError !== true, "默认上限下 40 条正常导出", rNoLimit.isError);
+
+    ws.close();
+    proc.kill();
+    await sleep(200);
+  }
+
   // ============ 6. 错误语义(协议层可见) ============
   // 断言客户端实际收到的错误文本: 机读码 + 下一步。这条比读源码更硬 —— 它验证 errors.js
   // 的表、tools.js 的 fail/fromException、MCP 结果封装三段串起来没断。

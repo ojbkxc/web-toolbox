@@ -21,6 +21,39 @@ function text(s) {
 function fail(code, msg, hint) {
   return toolFail(code, msg, hint);
 }
+
+// 导出产物体积守卫: 3000 条满量时 JMX≈6.7MB / HAR≈5.3MB(实测 500 条 1139KB/912KB 线性外推)。
+// 脚本类产物(HAR/JMX/PY)**截断后就是废文件** —— 半截 JSON 不是 HAR, 半截 JMX 打不开,
+// 所以这里宁可明确失败并给出路, 也不返回"看起来成功"的破产物(与 errors.js 的失败口径一致)。
+const EXPORT_MAX_CHARS = 2_000_000;   // 默认 2M 字符(UTF-8 约 2-4MB), 覆盖真实客户端的响应上限
+const EXPORT_MAX_CHARS_CAP = 20_000_000;
+
+function exportLimitFrom(args) {
+  const n = Number(args && args.maxChars);
+  if (!n || !Number.isFinite(n)) return EXPORT_MAX_CHARS;
+  return Math.min(Math.max(n, 1000), EXPORT_MAX_CHARS_CAP);
+}
+
+// 超限时给"可执行的下一步": 指出当前规模 + 三条缩小路 + 调高上限的方法。
+function guardExportSize(text, toolName, filtered, limit) {
+  const size = text.length;
+  if (size <= limit) return null;
+  const hosts = [...new Set(filtered.map((e) => {
+    try { return new URL(e.url).hostname; } catch { return ""; }
+  }).filter(Boolean))].slice(0, 5);
+  const hints = [];
+  if (hosts.length > 1) hints.push(`按域名分开导(hostIncludes): ${hosts.join(" / ")}`);
+  const prefixes = [...new Set(filtered.map((e) => String(e.path || "").split("/").slice(0, 3).join("/")))].filter(Boolean).slice(0, 3);
+  if (prefixes.length > 1) hints.push(`按路径前缀收紧(pathIncludes): ${prefixes.join(" / ")}`);
+  hints.push("用 method / statusMin 只导关键接口(如只看失败: statusMin=400)");
+  hints.push(`确实要全量就调大上限: maxChars=${Math.min(Math.ceil(size * 1.1), EXPORT_MAX_CHARS_CAP)}`);
+  return fail(
+    LOCAL.BAD_STATE,
+    `${toolName} 产物过大: 当前 ${filtered.length} 条会生成 ${size} 字符(约 ${(size / 1024 / 1024).toFixed(1)}MB), 超过上限 ${limit}。`
+      + "脚本类产物截断后无法使用, 所以不返回半截结果。",
+    hints.join("; "),
+  );
+}
 // 带结构化返回: content 仍给人类可读 JSON, structuredContent 给客户端直接取字段
 // (SDK 会拿 outputSchema 校验它; 字段多一个少一个都会被拒, 所以 shape 与返回值必须同源)。
 function structured(obj) {
@@ -341,13 +374,15 @@ export function registerTools(server, hub, ctx) {
 
   register("export_har", {
     title: "导出 HAR",
-    description: "把当前抓包导出为 HAR 1.2(浏览器/Postman/DevTools 通用)。返回 JSON 文本, 大流量建议先过滤。",
-    inputSchema: { ...filterShape },
+    description: "把当前抓包导出为 HAR 1.2(浏览器/Postman/DevTools 通用)。返回 JSON 文本。"
+      + "产物过大时会明确报错并给出缩小范围/调高上限的办法(不返回半截 HAR)。",
+    inputSchema: { ...filterShape, maxChars: z.number().optional().describe("产物字符上限, 默认 2000000; 超限报错而非截断") },
   }, async (args) => run(async () => {
     const all = await hub.request("net.list");
     const filtered = applyFilter(all, args || {});
     if (!filtered.length) return fail(LOCAL.NO_ENTRIES, "过滤后没有条目");
-    return text(exporters.buildHarText(filtered));
+    const out = exporters.buildHarText(filtered);
+    return guardExportSize(out, "export_har", filtered, exportLimitFrom(args)) || text(out);
   }));
 
   register("export_jmx", {
@@ -358,23 +393,26 @@ export function registerTools(server, hub, ctx) {
     inputSchema: {
       ...filterShape,
       threads: z.number().optional().describe("线程数, 默认 1(巡检安全口径)"),
+      maxChars: z.number().optional().describe("产物字符上限, 默认 2000000; 超限报错而非截断"),
     },
   }, async (args) => run(async () => {
     const all = await hub.request("net.list");
     const filtered = applyFilter(all, args || {});
     if (!filtered.length) return fail(LOCAL.NO_ENTRIES, "过滤后没有条目");
-    return text(exporters.buildJmxText(filtered, { threads: args?.threads }));
+    const out = exporters.buildJmxText(filtered, { threads: args?.threads });
+    return guardExportSize(out, "export_jmx", filtered, exportLimitFrom(args)) || text(out);
   }));
 
   register("export_python", {
     title: "导出 Python 重放脚本",
-    description: "把当前抓包导出为 requests 重放脚本(含参数链内联)。",
-    inputSchema: { ...filterShape },
+    description: "把当前抓包导出为 requests 重放脚本(含参数链内联)。产物过大时明确报错(不返回半截脚本)。",
+    inputSchema: { ...filterShape, maxChars: z.number().optional().describe("产物字符上限, 默认 2000000; 超限报错而非截断") },
   }, async (args) => run(async () => {
     const all = await hub.request("net.list");
     const filtered = applyFilter(all, args || {});
     if (!filtered.length) return fail(LOCAL.NO_ENTRIES, "过滤后没有条目");
-    return text(exporters.buildPyText(filtered));
+    const out = exporters.buildPyText(filtered);
+    return guardExportSize(out, "export_python", filtered, exportLimitFrom(args)) || text(out);
   }));
 
   register("correlate", {

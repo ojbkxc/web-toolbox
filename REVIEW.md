@@ -28,6 +28,26 @@
 - smoke +1(52), `check_bridge_schema` 的"七个机读工具"断言同步更新
   (bridge_status/net_list/net_get/net_hosts/correlate/tab_list/chain_replay)。
 
+### R50: 提交并推送(经授权)
+
+- commit `8172480` 推到 `origin/main`, 本地/远端 SHA 一致(`9ef1875..8172480`);
+  仓库仍无 Actions workflow, 等价门禁为本地 59/59。
+
+### R51: 导出产物体积守卫(实测 3000 条会造 6.7MB 脚本)
+
+- **实测**: 500 条抓包 → JMX **1139KB** / HAR **912KB** / PY 497KB; 线性外推到 3000 条(录制上限)
+  约 **JMX 6.7MB / HAR 5.3MB** —— 直接塞进 MCP 响应会撞客户端体积上限或 OOM。
+- **关键判断**: 脚本类产物(HAR/JMX/PY)**截断即废** —— 半截 JSON 不是 HAR, 半截 JMX 打不开。
+  所以既不返回半截, 也不静默截断, 而是**明确失败并给出路**(与 errors.js 的失败口径一致)。
+- **实现**: 新增 `guardExportSize()`; 三个导出工具加 `maxChars`(默认 2,000,000, 上限 20,000,000);
+  超限返回 `错误[bad_state]: <工具> 产物过大: 当前 N 条会生成 M 字符(约 X MB), 超过上限 L` +
+  "下一步"里给**具体可执行**的三条缩小路(按域名 `hostIncludes` 并列出真实域名 / 按路径前缀
+  `pathIncludes` 并列出真实前缀 / `statusMin` 只看失败)以及 `maxChars=<建议值> 调高上限`。
+- **验证(smoke +6, 52→58)**: 40 条 × `maxChars=1000` → isError + 机读码 `bad_state` + 文案点名
+  工具与上限 + 下一步含 `maxChars=` 与 `statusMin/hostIncludes`; 对照组(默认上限导 40 条)正常返回。
+- 顺带: `errors.knownCodes()` 之前是零引用导出, 现在被 `check_bridge_errors` 用来断言
+  "knownCodes() = 线协议码 ∪ 业务码"(少一个码 = 有码查不到文案)。
+
 ### R48: chain_replay 汇总结构化
 
 - **问题**: `chain_replay` 的汇总只存在于 `content` 文本里(人读的 "OK 3 · DIFF 1"), 客户端要
