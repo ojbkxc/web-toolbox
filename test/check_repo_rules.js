@@ -1,0 +1,156 @@
+// check_repo_rules.js —— AGENTS.md 硬规则的机器执行(v1.1.46)
+//
+// AGENTS 的 7 条 Never 里, 1/4/5/6/7 到 R56 各有闸门; 剩下两条一直是"纪律":
+//   2. 禁止在测试里放行未过的断言(.skip / 注释掉断言 / 放宽阈值让 CI 变绿);
+//   3. 禁止 `git add -A` / `git add .`。
+// 纪律靠人记就会破 —— 本轮把它们变成断言, 并补一条零依赖的正向检查。
+//
+// 判定口径(易错点都写在注释里):
+//   · "环境跳过" 合法: TC.skip(...) 会打 SKIP(env) 并计入摘要, 属 AGENTS "环境限制用 skip
+//     标注, 不伪装通过"; 要抓的是**框架级** .skip(/.todo(/xit(/xdescribe( —— 那才是静默放行。
+//   · process.exit(0) 只判"真代码行": 行首注释、以及写在字符串/正则里的自描述不算。
+//   · 零依赖只扫**扩展运行时代码**(根 js + 三页面), 不含 test/(测试当然能用 node 内置);
+//     node: 前缀与内置模块名不是 npm 包。
+const fs = require("fs");
+const path = require("path");
+const ROOT = path.resolve(__dirname, "..");
+
+let fails = 0;
+const ok = (name, cond, got) => {
+  if (cond) console.log("  OK " + name);
+  else { fails++; console.log("FAIL " + name + " → " + JSON.stringify(got)); }
+};
+
+// ---------- 待扫的测试文件(与 run_all 同口径) ----------
+const testFiles = [];
+for (const f of fs.readdirSync(__dirname)) {
+  if (/^(check_|e2e_)/.test(f) && f.endsWith(".js")) testFiles.push(path.join(__dirname, f));
+}
+testFiles.push(path.join(ROOT, "test_regression.js"));
+if (fs.existsSync(path.join(ROOT, "mock_bg_test.js"))) testFiles.push(path.join(ROOT, "mock_bg_test.js"));
+testFiles.push(path.join(ROOT, "samples", "test_regression_samples.js"));
+
+// ---------- A/B/C ----------
+const commented = [];
+const skipped = [];
+const earlyExit = [];
+for (const abs of testFiles) {
+  const rel = path.relative(ROOT, abs).replace(/\\/g, "/");
+  const lines = fs.readFileSync(abs, "utf8").split(/\r?\n/);
+  lines.forEach((line, i) => {
+    const t = line.trim();
+    // A: 被注释掉的断言调用
+    if (/^\/{1,2}\s*(ok|assert)\s*\(/.test(t)) commented.push(`${rel}:${i + 1}`);
+    // B: 框架级跳过(排除 TC.skip 的环境跳过); 注释行豁免 —— 注释里写规则名不算放行
+    const isCommentB = /^\s*(\/\/|\*|\/\*)/.test(line);
+    const envSkip = /\bTC\.skip\s*\(/.test(line);
+    if (!isCommentB && !envSkip && (/\.(skip|todo)\s*\(/.test(line) || /^\s*x(it|describe)\s*\(/.test(line))) {
+      skipped.push(`${rel}:${i + 1}`);
+    }
+    // C: 提前 process.exit(0) —— 只看真代码行
+    const isComment = /^\s*(\/\/|\*|\/\*)/.test(line);
+    const beforeExit = line.split("process.exit(0)")[0];
+    const looksLiteral = /["'`\/]/.test(beforeExit);
+    if (!isComment && !looksLiteral && /process\.exit\(0\)/.test(line) && i < lines.length - 12) {
+      earlyExit.push(`${rel}:${i + 1}`);
+    }
+  });
+}
+ok(`没有注释掉的断言调用(${testFiles.length} 个测试文件已扫)`, commented.length === 0, commented);
+ok("没有框架级跳过(.skip/.todo/xit/xdescribe)", skipped.length === 0, skipped);
+ok("process.exit(0) 只在文件末尾", earlyExit.length === 0, earlyExit);
+
+// ---------- D: git add -A ----------
+const docs = [];
+(function walk(d) {
+  for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+    if (["node_modules", ".git"].includes(ent.name)) continue;
+    const p = path.join(d, ent.name);
+    if (ent.isDirectory()) walk(p);
+    else if (/\.(md|js|mjs|json)$/.test(ent.name)) docs.push(p);
+  }
+})(ROOT);
+const addAll = [];
+for (const abs of docs) {
+  const rel = path.relative(ROOT, abs).replace(/\\/g, "/");
+  fs.readFileSync(abs, "utf8").split(/\r?\n/).forEach((line, i) => {
+    // 注释行豁免: 文档里写"禁止 git add -A"是要求, 不是用法
+    if (/^\s*(\/\/|\*|\/\*|#|>|-)/.test(line)) return;
+    if (/(^|\s)git\s+add\s+(-A|-a|\.)(\s|$|`)/.test(line) && !/禁止|不许|Never|never|do not/i.test(line)) {
+      addAll.push(`${rel}:${i + 1}`);
+    }
+  });
+}
+ok("脚本/文档里没有 `git add -A|.|-a` 的用法", addAll.length === 0, addAll);
+
+// ---------- E: 零依赖 ----------
+ok("仓库根没有 package.json(扩展源码即产物)", !fs.existsSync(path.join(ROOT, "package.json")), "存在 package.json");
+const mf = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8"));
+ok("manifest 没有打包钩子(build 字段)", !("build" in mf), Object.keys(mf));
+
+const NODE_BUILTINS = new Set(["fs", "path", "os", "vm", "http", "https", "crypto", "url",
+  "child_process", "events", "stream", "util", "assert", "net", "zlib", "buffer", "timers"]);
+const BARE_IMPORT = /(?:import\s+[^;'"]*from\s+['"]([^./][^'"]*)['"]|require\(\s*['"]([^./][^'"]*)['"]\s*\))/g;
+
+const extFiles = [];
+(function walk2(d) {
+  for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+    if (["node_modules", ".git", "samples", "bridge", "icons", "scratch", "test"].includes(ent.name)) continue;
+    const p = path.join(d, ent.name);
+    if (ent.isDirectory()) walk2(p);
+    else if (/\.(js|mjs)$/.test(ent.name)) extFiles.push(p);
+  }
+})(ROOT);
+
+const npmImports = [];
+for (const abs of extFiles) {
+  const rel = path.relative(ROOT, abs).replace(/\\/g, "/");
+  const src = fs.readFileSync(abs, "utf8");
+  for (const m of src.matchAll(BARE_IMPORT)) {
+    const spec = m[1] || m[2];
+    if (!spec) continue;
+    if (/^node:/.test(spec) || NODE_BUILTINS.has(spec)) continue;
+    npmImports.push(`${rel} → ${spec}`);
+  }
+}
+ok(`扩展运行时代码不引第三方 npm 包(${extFiles.length} 个文件已扫)`, npmImports.length === 0, npmImports);
+
+// ---------- 闸门自证: 判定规则必须真的能分辨新旧形态 ----------
+// 只看"0 命中"不可靠 —— 正则写坏时同样是 0 命中(这条教训来自 R55 域名闸门)。
+{
+  // 探针用拼接构造: 若把被禁形态按字面量写进本文件, 闸门会抓到自己(必须能区分"描述规则"与"使用形态")。
+  const DOT = ".";
+  const probeLines = [
+    "  ok(true, \"x\");",
+    "  // ok(true, \"注释掉的断言\");",
+    "  it" + DOT + "skip(\"case\", () => {});",
+    "  TC" + DOT + "skip(\"py_compile\", \"未找到 python 3 解释器\");",
+    "  console" + DOT + "log(\"process" + DOT + "exit(0) 只允许在末尾\");",
+    "  process" + DOT + "exit(0);",
+    ["git", "add", "-A"].join(" "),
+    ["git", "add", "."].join(" "),
+    "// 禁止 git add -A",
+  ];
+  const isComment = (l) => /^\s*(\/\/|\*|\/\*|#|>|-)/.test(l);
+  const caught = {
+    commentedAssert: 0, frameworkSkip: 0, envSkipKept: 0, earlyExit: 0, addAll: 0, addAllDocKept: 0,
+  };
+  probeLines.forEach((line, i) => {
+    if (/^\/{1,2}\s*(ok|assert)\s*\(/.test(line.trim())) caught.commentedAssert++;
+    const envSkip = /\bTC\.skip\s*\(/.test(line);
+    if (!isComment(line) && !envSkip && (/\.(skip|todo)\s*\(/.test(line) || /^\s*x(it|describe)\s*\(/.test(line))) caught.frameworkSkip++;
+    if (envSkip) caught.envSkipKept++;
+    const beforeExit = line.split("process.exit(0)")[0];
+    if (!isComment(line) && !/["'`\/]/.test(beforeExit) && /process\.exit\(0\)/.test(line) && i < probeLines.length - 1) caught.earlyExit++;
+    if (!isComment(line) && /(^|\s)git\s+add\s+(-A|-a|\.)(\s|$|`)/.test(line) && !/禁止|不许/i.test(line)) caught.addAll++;
+    if (isComment(line) && /git\s+add\s+-A/.test(line)) caught.addAllDocKept++;
+  });
+  ok("闸门自证: 注释掉的断言会被抓", caught.commentedAssert === 1, caught);
+  ok("闸门自证: 框架级跳过会被抓", caught.frameworkSkip === 1, caught);
+  ok("闸门自证: TC.skip 环境跳过不被误判", caught.envSkipKept === 1, caught);
+  ok("闸门自证: 提前 process.exit(0) 会被抓, 字符串里的不算", caught.earlyExit === 1, caught);
+  ok("闸门自证: git add -A/. 会被抓, 文档里描述禁令的不算", caught.addAll === 2 && caught.addAllDocKept === 1, caught);
+}
+
+console.log(fails ? `=== repo rules FAIL: ${fails} ===` : "=== repo rules PASS ===");
+process.exit(fails ? 1 : 0);

@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 62 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 63 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -88,6 +88,8 @@ node test/check_xxx.js        # 单跑一个
 | check_ai_egress | AI 外发路径单源闸门: 10 个 `build*Prompt` 全部在 aireport.js 且**每个内部都调清洗**(aiSanitizeEntry/scrubLong/scrubSensitiveKeys);每处 `callLlm` 的宿主函数必须经 `build*Prompt`(options 的 testLlm 是唯一白名单例外, 且自检"例外不接触录制数据");build*Prompt 不许在别处复制;skill.js 委托 aireport 且不自己再洗一遍(防双份规则漂移)(v1.1.43) | v1.1.43 |
 
 | check_no_internal_domains | 硬规则 4 的机器执行: 扫扩展运行时代码(根 js + 三页面 + manifest, 21 文件), 除 RFC 2606 保留域/产品自有域/扩展 API 命名空间外**不许出现真实或内网域名**;含**闸门自证**(真实域样例必须被判红、保留域必须放过)防"0 命中其实是正则失效"(v1.1.44) | v1.1.44 |
+
+| check_repo_rules | AGENTS 硬规则 2/3/1 的机器执行: 测试里不许注释掉断言、不许框架级 .skip/.todo/xit(环境跳过 TC.skip 合法, 它会打 SKIP(env))、process.exit(0) 只能在末尾, 脚本/文档不许出现全量 add 用法, 仓库根无 package.json + 扩展运行时代码不引第三方 npm 包; **含闸门自证**(五组探针证明能分辨"描述规则"与"使用形态")(v1.1.46) | v1.1.46 |
 
 ## 维护约定
 

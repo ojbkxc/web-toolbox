@@ -4,7 +4,7 @@
 目标: 持续评审并完善本仓库; 每轮必须"取证 → 修根因 → 回归 → 记录", 不许只写结论。
 
 **门禁(2026-11-23 起)**
-- 扩展回归: `node test/run_all.js` → **62/62 PASS**(内含桥接 unit/exporters/doctor/smoke)
+- 扩展回归: `node test/run_all.js` → **63/63 PASS**(内含桥接 unit/exporters/doctor/smoke)
 - 桥接端到端: `node bridge/smoke.mjs` → **52 PASS / 0 FAIL**(任意 cwd)
 - 桥接单测: `node bridge/unit.mjs` → **71 PASS / 0 FAIL**; `node bridge/test-exporters.mjs` → **46 PASS / 0 FAIL**
 - 桥接自检: `node bridge/src/doctor.js` → **18/18 PASS**(需先起 daemon; 含监听地址/活体握手/协议与包版本一致性/归档目录/令牌权限)
@@ -27,6 +27,36 @@
   (实现改了、文档忘了改, 当轮就红)。补表行后绿。
 - smoke +1(52), `check_bridge_schema` 的"七个机读工具"断言同步更新
   (bridge_status/net_list/net_get/net_hosts/correlate/tab_list/chain_replay)。
+
+### R57: AGENTS 硬规则 2/3/1 的机器执行(补上最后三条"纪律")
+
+- **动机**: 到 R56, 硬规则 1/4/5/6/7 各有闸门; 剩下 2("禁止在测试里放行未过的断言")、
+  3("禁止全量 add")、以及 1 的零依赖正向检查一直是**纪律**。纪律靠人记就会破。
+- **新增** `test/check_repo_rules.js`(7 条判定 + 5 条自证):
+  - A 测试里不许出现**被注释掉的断言调用**;
+  - B 不许框架级跳过调用 —— 但 `TC.skip(...)` 合法: 它打 `SKIP(env)` 并计入摘要, 正是
+    AGENTS "环境限制用 skip 标注, 不伪装通过"的形态;
+  - C `process.exit(0)` 只允许在文件末尾(提前退出会让后面断言静默不跑); 判定排除注释行与
+    写在字符串/正则里的自描述;
+  - D 脚本/文档里不许出现全量 add 用法(注释行豁免: 写"禁止…"是要求不是用法);
+  - E 零依赖: 仓库根无 `package.json`、manifest 无打包字段、**扩展运行时代码不引第三方 npm 包**
+    (只扫根 js + 三页面; `node:` 前缀与内置模块名不算)。
+- **闸门自证(本轮最关键的工程决定)**: 探针用**拼接构造**写成数据, 而不是按字面量写在文件里 ——
+  否则闸门会抓到自己。这一步逼出一个真问题: 闸门必须能区分"**描述规则**"与"**使用形态**",
+  于是 B/D 都加了注释行豁免, 并用五组探针证明豁免没把真形态一起放过。
+- **踩坑(3 次红)**: 探针最初直接写了被禁形态的字面量, 闸门立刻抓自己; 改拼接后才绿 ——
+  这本身证明闸门**真的在工作**, 不是恒真。
+
+### R56: "永远全录"从注释变成行为级断言(AGENTS 硬规则 7)
+
+- **规则原文**: "录制永远全录(过滤/勾选/清洗只影响显示与导出)"。此前这条只写在 AGENTS 与
+  `background.js` 注释里 —— **没有任何一条测试喂过静态资源/OPTIONS/SSE 进引擎**。
+- **新增场景 9**(6 条, 走真实 flushEntries 管线): `.css`/`.js` 入列(9a); OPTIONS 预检入列(9b);
+  SSE(`text/event-stream` mime)入列且保留 mime(9c) —— 若引擎按 mime 剔除, 导出层的 SSE 判定
+  就永远不被触发; 普通业务入列(9d); **未授权域不入库**(9e); 未授权域**计入 unmatchedHosts**
+  (9f, 走 `getRecInfo` 读 `["other.example.net×1"]`) —— 不入库但必须"可见"。
+- **踩坑**: 状态消息名是 `getRecInfo` 不是 `getState`; 写错时断言拿不到 unmatched 就红,
+  说明这类"名字写错"也能被行为测试抓住而不是静默通过。
 
 ### R55: 清掉三处注释里的真实客户域名 + 域名闸门(含自证)
 
