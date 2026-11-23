@@ -314,7 +314,8 @@ function extHello(extra = {}) {
     });
   });
   ext.ws.close();
-  const st = await Promise.race([status, sleep(2000).then(() => null)]);
+  // hub 广播 ext.status 是断线即推(事件驱动), 正常 <100ms; 600ms 兜底抗 CI 抖动
+  const st = await Promise.race([status, sleep(600).then(() => null)]);
   ok("扩展断线 → 代理收到 ext.status(online:false)", st && st.data.online === false, st);
   proxy.ws.close();
   await hub.stop();
