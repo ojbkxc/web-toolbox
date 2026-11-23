@@ -13,8 +13,9 @@
     "unit": "node ./unit.mjs",
     "exporters": "node ./test-exporters.mjs",
     "smoke": "node ./smoke.mjs",
-    "test": "node ./unit.mjs && node ./test-exporters.mjs && node ./test-doctor.mjs && node ./smoke.mjs",
-    "doctorE2e": "node ./test-doctor.mjs"
+    "test": "node ./unit.mjs && node ./test-exporters.mjs && node ./test-doctor.mjs && node ./test-reconnect.mjs && node ./smoke.mjs",
+    "doctorE2e": "node ./test-doctor.mjs",
+    "reconnect": "node ./test-reconnect.mjs"
   },
   "engines": {
     "node": ">=18.17"

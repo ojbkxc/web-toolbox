@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 69 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 70 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -102,6 +102,8 @@ node test/check_xxx.js        # 单跑一个
 | check_options_bridge | 选项页「AI 桥接」区行为级(vm 跑真实 options.js, 双形态桩): 非法地址拦截且不落库、空令牌保存明示"不会连接"、有令牌 ✓、bridgeStatus 成功/失败/无响应三分流(透 lastError、给指引不静默空串)、已存配置回填 url/token/enabled(v1.1.52) | v1.1.52 |
 
 | check_replay_verdict_matrix | verdict 判定矩阵: 断言**优先于状态码**(隐含契约, 有 asserts 时 500→200 也可 OK)/四类断言正反例(status/contains/not_contains/json_eq)/json_eq 降级(非 JSON 失败不炸、路径不存在失败、数组取首元素)/无断言回退(状态码优先于 body, 体差异 DIFF 不是 FAIL)/快失败(msg 报第一条)(v1.1.54) | v1.1.54 |
+
+| bridge/test-reconnect | 桥接客户端重连语义(vm 跑真实 bridge-client.js + 可控 FakeWS): 连接失败→lastError 有值+alarm 重连(SW 生命周期安全);READY→connected, daemon 断开→重新 alarm;恢复→lastError 清空;hello 帧含令牌与协议版本(v1.1.55) | v1.1.55 |
 
 ## 维护约定
 

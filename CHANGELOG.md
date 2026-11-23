@@ -1,5 +1,19 @@
 # 更新记录
 
+## v1.1.55 — 桥接客户端重连语义(行为级)
+
+- **缺口**: hub 侧(bridge)的重连有单测, 但**扩展侧**(bridge-client.js)的重连语义零覆盖 ——
+  连接失败/断线恢复/心跳/alarm 生命周期, 坏了只能靠真机发现。
+- **新增** `bridge/test-reconnect.mjs`(10 条, vm 跑真实 bridge-client.js + 可控 FakeWS):
+  失败 → lastError 有值 + **alarm 重连**(setTimeout 在 MV3 worker 休眠后不触发);
+  READY → connected; daemon 断开 → 重新 alarm + connected=false;
+  恢复 → lastError 清空; hello 帧含令牌与协议版本。
+- **踩坑三连(全是测试自己)**: ①status() 是 **async 方法**(含 await), 不 await 拿到的是
+  Promise(`{}`); ②R58 的 ok 参数反序教训**又犯了一次**(9 处, 输出 "OK false" 即假绿信号);
+  ③未喂 ready 时 connect 永不 resolve, 后续段静默退出 —— fire-and-forget + 手动喂帧。
+- **教训固化**: 本文件在断言库签名旁写明"参数反序=最危险假绿", 并把 status() 异步形态
+  写进接口注释。
+
 ## v1.1.54 — verdict 判定矩阵走查
 
 - verdict 是链路重放的"裁判"(每条 OK/DIFF/FAIL/ERR 直接决定下一步)。此前
