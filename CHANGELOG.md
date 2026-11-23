@@ -1,5 +1,14 @@
 # 更新记录
 
+## v1.1.61 — zip 压缩(448KB → 173KB)
+
+- pack.cjs 从 store 切 **deflate(level 9)**: 源码文本类内容实测 -61%~-67%(376KB→139KB),
+  zip 总体 448KB → **173KB**。真实 `Expand-Archive` 展开 + 8 文件字节对拍通过。
+- **两个 zip 结构 bug(打包器自纠)**: ①central directory 的 method 字段(offset 10)没改,
+  解压器按 CD 决定算法 → 把压缩流当 store 落盘(展开产物是乱码); ②内置自检跳条目用
+  uncompressed size 去 skip, deflate 后跳过头丢条目(22 误报 8)。两个都修后自检 + 真实
+  展开 + 字节对拍三层全过。
+
 ## v1.1.60 — 一条命令打包(bridge/pack.cjs)
 
 - **动机**: 用户装扩展要手动挑文件(排 test/samples/bridge/docs), 挑错就装不上或带脏东西。

@@ -62,21 +62,22 @@ for (const rel of files) {
   const data = fs.readFileSync(path.join(ROOT, rel));
   const name = Buffer.from(rel.replace(/\\/g, "/"), "utf8");
   const crc = crc32(data);
-  // local file header
+  // deflate(level 9): 源码文本实测 -63%(448KB → ~170KB)。zip 标准方法 8。
+  const comp = zlib.deflateRawSync(data, { level: 9 });
   const lh = Buffer.alloc(30);
   lh.writeUInt32LE(0x04034b50, 0);
   lh.writeUInt16LE(20, 4);       // version needed
   lh.writeUInt16LE(0, 6);        // flags
-  lh.writeUInt16LE(0, 8);        // method: store
+  lh.writeUInt16LE(8, 8);        // method: deflate
   lh.writeUInt16LE(0, 10); lh.writeUInt16LE(0, 12); // time/date
   lh.writeUInt32LE(crc, 14);
-  lh.writeUInt32LE(data.length, 18);
-  lh.writeUInt32LE(data.length, 22);
+  lh.writeUInt32LE(comp.length, 18);   // compressed size
+  lh.writeUInt32LE(data.length, 22);   // uncompressed size(校验用)
   lh.writeUInt16LE(name.length, 26);
   lh.writeUInt16LE(0, 28);
-  chunks.push(lh, name, data);
-  entries.push({ name, crc, size: data.length, offset });
-  offset += lh.length + name.length + data.length;
+  chunks.push(lh, name, comp);
+  entries.push({ name, crc, size: data.length, csize: comp.length, offset });
+  offset += lh.length + name.length + comp.length;
 }
 // central directory
 const cdStart = offset;
@@ -85,9 +86,9 @@ for (const e of entries) {
   ch.writeUInt32LE(0x02014b50, 0);
   ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6);
   ch.writeUInt16LE(0, 8); ch.writeUInt16LE(0, 10);
-  ch.writeUInt16LE(0, 12); ch.writeUInt16LE(0, 14);
+  ch.writeUInt16LE(8, 10); ch.writeUInt16LE(0, 12); // method=deflate / time
   ch.writeUInt32LE(e.crc, 16);
-  ch.writeUInt32LE(e.size, 20); ch.writeUInt32LE(e.size, 24);
+  ch.writeUInt32LE(e.csize, 20); ch.writeUInt32LE(e.size, 24);
   ch.writeUInt16LE(e.name.length, 28);
   ch.writeUInt16LE(0, 30); ch.writeUInt16LE(0, 32);
   ch.writeUInt16LE(0, 34); ch.writeUInt16LE(0, 36);
@@ -116,9 +117,9 @@ for (let i = 0; i < zip.length - 4; ) {
   if (zip.readUInt32LE(i) === 0x04034b50) {
     const nlen = zip.readUInt16LE(i + 26);
     const elen = zip.readUInt16LE(i + 28);
-    const size = zip.readUInt32LE(i + 22);
+    const csize = zip.readUInt32LE(i + 18);  // compressed(deflate 后与 size 不同)
     names.push(zip.slice(i + 30, i + 30 + nlen).toString("utf8"));
-    i += 30 + nlen + elen + size;
+    i += 30 + nlen + elen + csize;
   } else i++;
 }
 const bad = names.filter((n) => /^(test|samples|bridge|docs|node_modules)\//.test(n) || /^\.git/.test(n) || /REVIEW|CHANGELOG|AGENTS|CLAUDE|SECURITY/.test(n));
