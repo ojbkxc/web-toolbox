@@ -239,6 +239,7 @@ node bridge/unit.mjs     # 内部单测: register 自校验/config 参数守卫/
 node bridge/test-exporters.mjs  # 导出口径单测 + 单源证明 + 清洗降级 + 异常形态(HEAD/空 body/204/超长 query/PATCH/OPTIONS/multipart/HAR size), 46 项
 node bridge/test-doctor.mjs     # doctor 端到端(真起 daemon): 无 daemon/正确令牌/错令牌/参数错误 四场景, 21 项
 node bridge/test-reconnect.mjs   # 桥接客户端重连语义(可控 FakeWS): 失败重连/断开恢复/hello 帧, 10 项
+node bridge/test-auth.mjs        # 协议矩阵(独立 daemon): 鉴权/协议版本/白名单/控制开关, 9 项
 cd bridge && npm test    # 聚合: unit → exporters → doctor → smoke, 任一层红即退出非零
 node src/doctor.js          # 自检: 监听地址/node 版本/依赖/协议契约/令牌/daemon 端口/归档目录/令牌权限/扩展就位/活体握手/协议/版本一致性, 18 项
 node test/check_bridge.js   # 契约走查: 协议一致性/白名单对应/录制不变量, 归入全量回归

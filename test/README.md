@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 70 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 71 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -104,6 +104,8 @@ node test/check_xxx.js        # 单跑一个
 | check_replay_verdict_matrix | verdict 判定矩阵: 断言**优先于状态码**(隐含契约, 有 asserts 时 500→200 也可 OK)/四类断言正反例(status/contains/not_contains/json_eq)/json_eq 降级(非 JSON 失败不炸、路径不存在失败、数组取首元素)/无断言回退(状态码优先于 body, 体差异 DIFF 不是 FAIL)/快失败(msg 报第一条)(v1.1.54) | v1.1.54 |
 
 | bridge/test-reconnect | 桥接客户端重连语义(vm 跑真实 bridge-client.js + 可控 FakeWS): 连接失败→lastError 有值+alarm 重连(SW 生命周期安全);READY→connected, daemon 断开→重新 alarm;恢复→lastError 清空;hello 帧含令牌与协议版本(v1.1.55) | v1.1.55 |
+
+| bridge/test-auth | **协议矩阵**(独立 daemon, 每规则一实例): 错令牌→unauthorized+不崩 / 版本不符→protocol_mismatch / 未鉴权 QUERY→拒绝 / **扩展身份发 QUERY→forbidden**(白名单: 仅代理) / 控制方法未开 --allow-control→错误带开启方式 / 正确配置→ready; ⑤需先挂假扩展(否则被"扩展未连接"先拦)(v1.1.56) | v1.1.56 |
 
 ## 维护约定
 
