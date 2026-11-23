@@ -1,5 +1,17 @@
 # 更新记录
 
+## v1.1.52 — 选项页「AI 桥接」区行为级断言
+
+- **缺口**: 桥接连接是"用户填一次然后就不管"的配置面, 但选项页的域名/LLM 两区有走查、
+  **桥接区零行为断言** —— 坏了用户只会觉得"AI 连不上", 无法定位扩展侧还是 bridge 侧。
+- **新增** `test/check_options_bridge.js`(10 条, vm 跑真实 options.js):
+  非法地址(http:// 前缀)拦截且不落库; 空令牌保存成功但明示"不会连接";
+  bridgeStatus 三分流(connected → ✓ / lastError 透出 / 无响应给指引, 不静默空串);
+  已存配置回填 url/token/enabled。
+- **踩坑**(R60 教训再现): `chrome.runtime.sendMessage({type:"bridgeStatus"})` 走
+  await 形式(无回调), 而 getDomains 走回调式 —— 桩必须**双形态**, 只支持一种时
+  testBridge 的重试拿到 undefined 会伪装成"未连接"。
+
 ## v1.1.51 — docs/ 目录: MCP 接入指南 + 排障指南
 
 - 参考仓库把"接入各客户端"与"排障"拆成 docs/ 独立文档; 本仓库此前这些内容散在
