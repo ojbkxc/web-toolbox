@@ -720,7 +720,14 @@ async function bridgeSnapshot(tabId, maxChars) {
 const BRIDGE_FIND_FN = function (ref) {
   function findIn(root) {
     let hit = null;
-    try { hit = root.querySelector('[data-ai-ref="' + ref + '"]'); } catch { hit = null; }
+    // 属性值精确比对, 不把 ref 送进选择器解析器(ref 是外部输入):
+    // 旧实现是把 ref 拼进属性选择器字符串, 引号/方括号会被当语法解析 —— 上游校验一旦
+    // 被绕过或新增调用方漏写校验就是注入面。这里用遍历 + 属性等值, 零解析风险。
+    try {
+      for (const el of root.querySelectorAll("[data-ai-ref]")) {
+        if (el.getAttribute("data-ai-ref") === String(ref)) { hit = el; break; }
+      }
+    } catch { hit = null; }
     if (hit) return hit;
     try {
       for (const el of root.querySelectorAll("*")) {
@@ -741,7 +748,14 @@ const BRIDGE_FIND_FN = function (ref) {
 const BRIDGE_RECT_FN = function (ref) {
   function findIn(root) {
     let hit = null;
-    try { hit = root.querySelector('[data-ai-ref="' + ref + '"]'); } catch { hit = null; }
+    // 属性值精确比对, 不把 ref 送进选择器解析器(ref 是外部输入):
+    // 旧实现是把 ref 拼进属性选择器字符串, 引号/方括号会被当语法解析 —— 上游校验一旦
+    // 被绕过或新增调用方漏写校验就是注入面。这里用遍历 + 属性等值, 零解析风险。
+    try {
+      for (const el of root.querySelectorAll("[data-ai-ref]")) {
+        if (el.getAttribute("data-ai-ref") === String(ref)) { hit = el; break; }
+      }
+    } catch { hit = null; }
     if (hit) return hit;
     try {
       for (const el of root.querySelectorAll("*")) {
@@ -778,6 +792,8 @@ const BRIDGE_RECT_FN = function (ref) {
 
 // 量到落定为止: 连续两次量到同一个 rect 才返回(封顶 BRIDGE_SETTLE_TRIES 次)。
 async function bridgeSettleRect(tabId, ref) {
+  // 统一校验(不依赖各调用方): ref 是外部输入, 只允许 eN 形态。
+  if (!/^e\d+$/.test(String(ref))) throw new Error("ref 格式非法, 应为 eN");
   let box = null;
   for (let i = 0; i < BRIDGE_SETTLE_TRIES; i++) {
     const [r] = await chrome.scripting.executeScript({
@@ -823,7 +839,14 @@ async function bridgeClickRef(tabId, ref) {
 const BRIDGE_CLEAR_FN = function (ref) {
   function findIn(root) {
     let hit = null;
-    try { hit = root.querySelector('[data-ai-ref="' + ref + '"]'); } catch { hit = null; }
+    // 属性值精确比对, 不把 ref 送进选择器解析器(ref 是外部输入):
+    // 旧实现是把 ref 拼进属性选择器字符串, 引号/方括号会被当语法解析 —— 上游校验一旦
+    // 被绕过或新增调用方漏写校验就是注入面。这里用遍历 + 属性等值, 零解析风险。
+    try {
+      for (const el of root.querySelectorAll("[data-ai-ref]")) {
+        if (el.getAttribute("data-ai-ref") === String(ref)) { hit = el; break; }
+      }
+    } catch { hit = null; }
     if (hit) return hit;
     try {
       for (const el of root.querySelectorAll("*")) {
@@ -941,7 +964,14 @@ async function bridgeSendKey(target, spec) {
 const BRIDGE_RECLEAR_FN = function (ref) {
   function findIn(root) {
     let hit = null;
-    try { hit = root.querySelector('[data-ai-ref="' + ref + '"]'); } catch { hit = null; }
+    // 属性值精确比对, 不把 ref 送进选择器解析器(ref 是外部输入):
+    // 旧实现是把 ref 拼进属性选择器字符串, 引号/方括号会被当语法解析 —— 上游校验一旦
+    // 被绕过或新增调用方漏写校验就是注入面。这里用遍历 + 属性等值, 零解析风险。
+    try {
+      for (const el of root.querySelectorAll("[data-ai-ref]")) {
+        if (el.getAttribute("data-ai-ref") === String(ref)) { hit = el; break; }
+      }
+    } catch { hit = null; }
     if (hit) return hit;
     try {
       for (const el of root.querySelectorAll("*")) {
@@ -1067,7 +1097,14 @@ async function bridgeSelectRef(tabId, ref, value) {
     func: (rf, val) => {
       function findIn(root) {
         let hit = null;
-        try { hit = root.querySelector('[data-ai-ref="' + rf + '"]'); } catch { hit = null; }
+        // 属性值精确比对, 不把 ref 送进选择器解析器(ref 是外部输入):
+    // 旧实现是把 ref 拼进属性选择器字符串, 引号/方括号会被当语法解析 —— 上游校验一旦
+    // 被绕过或新增调用方漏写校验就是注入面。这里用遍历 + 属性等值, 零解析风险。
+        try {
+          for (const el of root.querySelectorAll("[data-ai-ref]")) {
+            if (el.getAttribute("data-ai-ref") === String(rf)) { hit = el; break; }
+          }
+        } catch { hit = null; }
         if (hit) return hit;
         try {
           for (const el of root.querySelectorAll("*")) {
@@ -1102,7 +1139,14 @@ async function bridgeScroll(tabId, p) {
       const rf = ref;
       function findIn(root) {
         let hit = null;
-        try { hit = root.querySelector('[data-ai-ref="' + rf + '"]'); } catch { hit = null; }
+        // 属性值精确比对, 不把 ref 送进选择器解析器(ref 是外部输入):
+    // 旧实现是把 ref 拼进属性选择器字符串, 引号/方括号会被当语法解析 —— 上游校验一旦
+    // 被绕过或新增调用方漏写校验就是注入面。这里用遍历 + 属性等值, 零解析风险。
+        try {
+          for (const el of root.querySelectorAll("[data-ai-ref]")) {
+            if (el.getAttribute("data-ai-ref") === String(rf)) { hit = el; break; }
+          }
+        } catch { hit = null; }
         if (hit) return hit;
         try {
           for (const el of root.querySelectorAll("*")) {

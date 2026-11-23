@@ -33,7 +33,16 @@ function newEnv(snapElements) {
     body: { nodeType: 1, nodeName: "BODY", tagName: "BODY", id: "", className: "" },
     querySelector() { return this._el; },
     querySelectorAll(sel) {
-      if (sel === "[data-ai-ref]") return [];              // 清上次标记
+      if (sel === "[data-ai-ref]") {
+        // 真实语义: 只有被快照打过标记的元素才带 data-ai-ref。这里给 _el 补上该属性
+        // (它由 makeInput/snapEl 构造, 未必自带宽 data-ai-ref), 否则属性遍历找不到它。
+        const el = this._el;
+        if (!el) return [];
+        if (typeof el.getAttribute === "function" && el.getAttribute("data-ai-ref") === "e1") return [el];
+        const orig = typeof el.getAttribute === "function" ? el.getAttribute.bind(el) : () => null;
+        el.getAttribute = (k) => (k === "data-ai-ref" ? "e1" : orig(k));
+        return [el];
+      }
       if (sel === "*" || /iframe/.test(sel)) return [];     // shadow 递归 / 同源 iframe 递归
       return this._snap;                                    // 快照的选择器表
     },

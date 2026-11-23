@@ -416,5 +416,22 @@ function extHello(extra = {}) {
   );
 }
 
+
+// ---- ref 安全性(v1.1.73) ----
+// ref 是外部输入(MCP 客户端给)。旧实现把 ref 拼进属性选择器字符串, 引号/方括号会被当语法;
+// 目前靠 4 个调用方各自校验兜着 —— 新增 ref 工具漏写校验就是注入面。
+// 现在: ①8 处页面内查找全部改为属性遍历(零解析); ②bridgeSettleRect 统一校验。
+{
+  const bc = fs.readFileSync(new URL("../bridge-client.js", import.meta.url), "utf8");
+  ok(
+    "外部 ref 不再拼进选择器(全部走属性遍历)",
+    (bc.match(/data-ai-ref="' \+/g) || []).length === 0,
+  );
+  ok(
+    "bridgeSettleRect 统一校验 ref(不依赖调用方)",
+    /async function bridgeSettleRect\(tabId, ref\) \{[\s\S]{0,200}\^e\\d\+\$/.test(bc),
+  );
+}
+
 console.log(`\n=== bridge unit: ${pass} PASS / ${fail} FAIL ===`);
 process.exit(fail ? 1 : 0);

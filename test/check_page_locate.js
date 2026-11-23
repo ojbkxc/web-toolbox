@@ -24,7 +24,22 @@ function newEnv() {
     _onTop: null,          // elementFromPoint 返回它
     rangeCalls: 0,
     querySelector() { return this._el; },
-    querySelectorAll() { return []; },
+    // querySelectorAll 按真实语义: 传入 [data-ai-ref] 时返回已打标记的元素
+    // (bridge-client 的查找已改为属性遍历, 不再把 ref 拼进选择器字符串)。
+    querySelectorAll(sel) {
+      if (!/^\[data-ai-ref\]$/.test(String(sel || ""))) return [];
+      const el = this._el;
+      if (!el) return [];
+      // 真实语义: 快照会给元素 setAttribute("data-ai-ref", "eN"); 只有带该属性的元素能被
+      // ref 找到。桩里的 _el 是手搭对象, 补上属性即可(否则属性遍历比对不上)。
+      if (typeof el.getAttribute !== "function") {
+        el.getAttribute = (k) => (k === "data-ai-ref" ? "e1" : null);
+      } else if (el.getAttribute("data-ai-ref") !== "e1") {
+        const orig = el.getAttribute.bind(el);
+        el.getAttribute = (k) => (k === "data-ai-ref" ? "e1" : orig(k));
+      }
+      return [el];
+    },
     elementFromPoint() { return this._onTop; },
     createRange() { this.rangeCalls++; return { selectNodeContents() {} }; },
   };
