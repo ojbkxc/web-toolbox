@@ -125,6 +125,11 @@ claude mcp add web-toolbox -s user -- node D:/GitHub/web-toolbox/bridge/src/inde
 未知参数(如把 `--allow-control` 拼成 `--alow-control`)**一律在启动前报错退出(码 2)**并举出可用参数 ——
 早先这些情况要么 NaN 崩在 WebSocketServer 里, 要么被静默忽略(控制类悄悄不可用)。
 
+**过滤语义(v1.1.41)**: 侧栏搜索框是"关键词分词 AND"(人在界面上搜词), bridge 的 `net_*` 是
+**字段级过滤**(按 method/status/statusMin/statusMax/pathIncludes/hostIncludes 组合, 多条件 AND)。
+两套口径并存且都合理, 但**不要当成同一个东西**: `hostIncludes` 是**子串**匹配,
+`api.test.com` 会同时命中 `api.test.com.cn`(要精确到域请带前导 `https://`, 或用 `net_hosts` 先看清单)。
+
 **控制开关一致性(v1.1.26)**: 本地进程的 `--allow-control` 与 daemon 的开关是**两个**值。
 代理模式下真正的闸门在 daemon —— 本地开了、daemon 没开时, 控制类工具会在 daemon 那侧被拒。
 `bridge_status` 现在回 `allowControl`(本地) / `daemonAllowControl`(daemon, 单进程为 null) /
@@ -230,7 +235,7 @@ node src/doctor.js      # 18 项逐条 PASS/FAIL, 每条带"下一步"
 
 ```bash
 node bridge/smoke.mjs    # 端到端: 鉴权/请求响应/事件/控制开关/未连接/工具注解/错误语义/结构化返回/字节口径/分页/截断/开关不一致/导出体积守卫, 58 项
-node bridge/unit.mjs     # 内部单测: register 自校验/config 参数守卫(--flag=value)/hub 拒绝分支/代理转发/断线失败/archive 落盘+权限+保留期清理/net_list 3000 条规模, 62 项(需 npm install)
+node bridge/unit.mjs     # 内部单测: register 自校验/config 参数守卫/hub 拒绝分支/代理转发/断线失败/archive 落盘+权限+保留期/net_list 3000 条规模与字段过滤边界, 71 项(需 npm install)
 node bridge/test-exporters.mjs  # 导出口径单测 + 单源证明 + 清洗降级 + 异常形态(HEAD/空 body/204/超长 query/PATCH/OPTIONS/multipart/HAR size), 46 项
 cd bridge && npm test    # 聚合: unit(51) → exporters(29) → smoke(43), 任一层红即退出非零
 node src/doctor.js          # 自检: 监听地址/node 版本/依赖/协议契约/令牌/daemon 端口/归档目录/令牌权限/扩展就位/活体握手/协议/版本一致性, 18 项

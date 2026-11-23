@@ -143,6 +143,40 @@ function extHello(extra = {}) {
   ok("末页不足一页时按实际返回(10 条)", ob.returned === 10 && ob.entries.length === 10, ob.returned);
 }
 
+// ============================================================ net_list 过滤语义
+// 侧栏搜索框是"关键词分词 AND"(见 sidepanel matchFilter), bridge 的 net_* 是"字段级过滤";
+// 两者口径**不同**且都合理(人搜词 vs 程序按字段筛), 但字段级这套的边界必须钉死 ——
+// 尤其是 hostIncludes 的跨域误命中与 statusMin/Max 区间。
+{
+  console.log("\n[net_list] 字段过滤边界");
+  const captured = {};
+  const fakeServer = { registerTool: (n, d, h) => { captured[n] = { def: d, handler: h }; } };
+  const rows = [
+    { id: "f1", method: "GET", url: "https://api.test.com/a", path: "/a", status: 200, durationMs: 1, body: "", response: "" },
+    { id: "f2", method: "POST", url: "https://api.test.com/b", path: "/b/order", status: 500, durationMs: 2, body: "{}", response: "" },
+    { id: "f3", method: "GET", url: "https://other.test.com/a", path: "/a", status: 404, durationMs: 3, body: "", response: "" },
+    { id: "f4", method: "GET", url: "https://api.test.com.cn/a", path: "/a", status: 302, durationMs: 4, body: "", response: "" },
+  ];
+  // 前缀陷阱: api.test.com 与 api.test.com.cn 的不同域; hostIncludes 是**子串**匹配, 会同时命中
+  const hubStub = { connected: true, extInfo: {}, request: async (m) => (m === "net.list" ? rows : {}) };
+  registerTools(fakeServer, hubStub, { archive: { append: () => 0, close() {} }, allowControl: false });
+  const call = async (args) => JSON.parse((await captured.net_list.handler(args)).content[0].text);
+
+  ok("method 精确匹配", (await call({ method: "post" })).returned === 1, (await call({ method: "post" })).returned);
+  ok("status 数值精确", (await call({ status: 500 })).returned === 1, "n/a");
+  // 四条数据 status: 200 / 500 / 404 / 302 —— ≥400 是 500 与 404 两条
+  ok("statusMin 只看失败(≥400)", (await call({ statusMin: 400 })).filtered === 2, (await call({ statusMin: 400 })).filtered);
+  ok("statusMax 只看成功(<400)", (await call({ statusMax: 399 })).filtered === 2, (await call({ statusMax: 399 })).filtered);
+  ok("statusMin+Max 区间(300..404)", (await call({ statusMin: 300, statusMax: 404 })).filtered === 2,
+    (await call({ statusMin: 300, statusMax: 404 })).filtered);
+  ok("多条件 AND(method+statusMin)", (await call({ method: "GET", statusMin: 400 })).filtered === 1,
+    (await call({ method: "GET", statusMin: 400 })).filtered);
+  const hostHit = await call({ hostIncludes: "api.test.com" });
+  ok("hostIncludes 是子串匹配(会同时命中 api.test.com.cn)", hostHit.filtered === 3, hostHit.filtered);
+  ok("pathIncludes 路径子串", (await call({ pathIncludes: "/order" })).returned === 1, "n/a");
+  ok("组合过滤无命中时仍报 total/filtered(不报错)", (await call({ method: "DELETE" })).filtered === 0, "n/a");
+}
+
 // ============================================================ config(参数校验)
 {
   console.log("\n[config] 参数解析与守卫");

@@ -6,7 +6,7 @@
 **门禁(2026-11-23 起)**
 - 扩展回归: `node test/run_all.js` → **59/59 PASS**(内含桥接 unit/exporters/smoke)
 - 桥接端到端: `node bridge/smoke.mjs` → **52 PASS / 0 FAIL**(任意 cwd)
-- 桥接单测: `node bridge/unit.mjs` → **62 PASS / 0 FAIL**; `node bridge/test-exporters.mjs` → **46 PASS / 0 FAIL**
+- 桥接单测: `node bridge/unit.mjs` → **71 PASS / 0 FAIL**; `node bridge/test-exporters.mjs` → **46 PASS / 0 FAIL**
 - 桥接自检: `node bridge/src/doctor.js` → **18/18 PASS**(需先起 daemon; 含监听地址/活体握手/协议与包版本一致性/归档目录/令牌权限)
 
 ---
@@ -27,6 +27,19 @@
   (实现改了、文档忘了改, 当轮就红)。补表行后绿。
 - smoke +1(52), `check_bridge_schema` 的"七个机读工具"断言同步更新
   (bridge_status/net_list/net_get/net_hosts/correlate/tab_list/chain_replay)。
+
+### R52: net_list 字段过滤边界(9 条)+ 口径澄清
+
+- **动机**: `applyFilter` 是 `net_list`/`export_*`/`correlate`/`chain_replay` 四处共用的筛选器,
+  之前只有 "limit/offset/无命中" 的边界(R14), **多条件组合与 hostIncludes 的前缀陷阱**没人钉。
+- **新增 9 条**(4 条数据: status 200/500/404/302 + `api.test.com` 与 `api.test.com.cn` 两域):
+  method 大小写不敏感精确匹配、status 数值精确、statusMin、statusMax、statusMin+Max 区间、
+  method+statusMin 的 **AND** 语义、**`hostIncludes` 是子串匹配**(会跨域命中 `api.test.com.cn`)、
+  pathIncludes 路径子串、无命中时仍给 `total/filtered`(不报错)。
+- **口径澄清写进 bridge README**: 侧栏搜索框是"关键词分词 AND"(人搜词), bridge 是字段级过滤;
+  两者**不是同一个东西** —— 尤其 `hostIncludes` 的子串语义要写明, 否则会以为它按域精确匹配。
+- **自查踩坑**: 首版把 `statusMin≥400` 的期望写成 3 条(实际 500/404 两条), 被断言当场抓出 ——
+  手算期望值必须让测试自己说话。
 
 ### R50: 提交并推送(经授权)
 
