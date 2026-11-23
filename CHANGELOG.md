@@ -1,5 +1,17 @@
 # 更新记录
 
+## v1.1.76 — HAR 的时间字段在真实数据上全部非法(样本 96/96 无 ts)
+
+- **实证**: 统计样本库 `ts` 字段 —— **96 条条目 100% 没有 ts**(样本 jsonl 只有
+  method/url/post/response/status/headers)。而 `buildHar` 写的是 `startedDateTime: e.ts || ""`,
+  于是**用样本导出的 HAR 每条 startedDateTime 都是空串** —— 那是"JSON 合法但 HAR 1.2 违规"
+  的文件, 分析与可视化工具都会报错。脏 ts(`"not-a-date"`)同样非法。
+- **修**: 加 `harIsoTime(ts, fallback)` —— 合法 ts 统一成 UTC ISO(带 Z), 缺失/非法则用
+  **一次性导出基准**; 同份导出内所有缺 ts 条目共享同一基准(不逐条 `Date.now()`, 否则同批
+  数据时间各不相同, 破坏可比性)。
+- **断言 + 负向验证**: `check_export_fields` 加 5 条**行为式**断言(正常/空/脏/无字段 + 共享
+  基准), 真跑 buildHar 验 ISO 8601 形态; 改回 `e.ts || ""` → 立刻红; 恢复后绿。
+
 ## v1.1.75 — JMX 只验良构不验结构(良构但 JMeter 打不开)
 
 - **实测缺口**: `checkXml` 只验**良构性**(单根/配对/引号/实体)。造一个良构但语义非法的 JMX:

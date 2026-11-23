@@ -365,6 +365,15 @@ function harQueryString(q) {
 // 会整键消失, HAR 校验器按"缺 required"拒收。
 // HAR content.size 的口径: **UTF-8 字节数**(不是 JS 字符数)。中文 1 字符=3 字节,
 // Chrome DevTools/其它 HAR 消费方按 size 汇总传输量, 用 .length 会低报。
+// ts → 合法 ISO 8601(供 HAR 用)。合法则原样返回; 缺失/非法则用给定的兜底时刻。
+// 为什么不是简单地 `e.ts || default`: 非日期的脏 ts(如 "n/a")同样会让 HAR 非法 —— 必须校验。
+function harIsoTime(ts, fallbackIso) {
+  if (typeof ts === "string" && ts && !Number.isNaN(Date.parse(ts))) {
+    // 统一成 UTC ISO(带 Z): HAR 用 Date.parse 能接受多种写法, 但分析工具更认标准形态
+    return new Date(Date.parse(ts)).toISOString();
+  }
+  return fallbackIso;
+}
 function harByteSize(text) {
   const s = String(text || "");
   if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(s).length;
@@ -377,6 +386,7 @@ function harByteSize(text) {
 //   · 二进制/Base64 响应在录制时已被替换成占位文本 "(binary/base64 略)", HAR 里也是这段文本,
 //     不额外标 content.encoding=base64(那会让消费方把占位文本当 base64 解)。
 function buildHar(entries) {
+  const exportAt = new Date().toISOString();   // 一次性基准: 同份导出内所有缺 ts 的条目共用
   return {
     log: {
       version: "1.2",
@@ -384,7 +394,10 @@ function buildHar(entries) {
       entries: entries.map((e) => {
         const dur = (typeof e.durationMs === "number" && e.durationMs >= 0) ? e.durationMs : -1;
         return {
-          startedDateTime: e.ts || "",
+          // HAR 1.2 要求 ISO 8601。样本条目/旧数据常没有 ts(实测 96 条样本 100% 无 ts),
+          // 直接写空串会产出"JSON 合法但规范非法"的 HAR —— 分析工具与 Chrome DevTools 都会
+          // 报错。这里兜底为导出时刻(同一份导出共享一个基准, 不逐条取 now, 保证同批可比)。
+          startedDateTime: harIsoTime(e.ts, exportAt),
           time: dur,
           request: {
             method: e.method, url: e.url, httpVersion: "HTTP/1.1",

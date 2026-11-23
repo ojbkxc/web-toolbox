@@ -58,4 +58,30 @@ assert(/\be\.id\b/.test(jmx) && /preludeIds/.test(jmx), 'f9. JMX 消费 e.id(pre
 assert(/fromId/.test(common), 'f10. AI 链 fromId/toId 在 common(链匹配消费 id)');
 
 console.log('');
+
+// ---- HAR 1.2 时间格式(v1.1.76) ----
+// 起因: 样本库 96 条条目 100% 没有 ts, buildHar 直接写空串 → 产出"JSON 合法但 HAR 规范非法"
+// 的文件(分析工具/DevTools 都会报错)。这里**真跑 buildHar** 验 startedDateTime 恒为 ISO 8601。
+{
+  const vm = require('vm');
+  const sandbox = { console: { log() {}, warn() {}, error() {} }, setTimeout, clearTimeout, URL, URLSearchParams, Date, JSON, Math, Promise };
+  sandbox.window = sandbox; sandbox.globalThis = sandbox;
+  sandbox.chrome = { storage: { local: { get: (k, cb) => cb && cb({}), set: (o, cb) => cb && cb() } }, runtime: { getManifest: () => ({ version: 't' }) } };
+  sandbox.document = { querySelector: () => null };
+  vm.createContext(sandbox);
+  new vm.Script(common, { filename: 'common.js' }).runInContext(sandbox);
+  const mk = (ts) => ([{ method: 'GET', url: 'https://a.test/x', path: '/x', query: '', headers: {}, body: '', status: 200, mime: '', response: '', ts, durationMs: 1 }]);
+  const isoOk = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(v) && !Number.isNaN(Date.parse(v));
+  const cases = [['正常 ts', '2026-11-24T01:02:03.000Z'], ['空 ts', ''], ['脏 ts', 'not-a-date'], ['无字段', undefined]];
+  for (const [label, ts] of cases) {
+    const har = sandbox.buildHar(mk(ts));
+    const dt = har.log.entries[0].startedDateTime;
+    assert(isoOk(dt), `har-time. ${label} → startedDateTime 是合法 ISO 8601(${dt})`);
+  }
+  // 同一份导出内, 多个缺 ts 条目共享同一基准(同批可比, 不是逐条 now)
+  const two = sandbox.buildHar([...mk(''), ...mk('')]);
+  const [a, b] = two.log.entries.map((e) => e.startedDateTime);
+  assert(a === b, `har-time. 同份导出内缺 ts 条目共享同一基准(${a} == ${b})`);
+}
+
 console.log('=== 导出器字段差异契约 PASS ===');
