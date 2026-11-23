@@ -27,6 +27,24 @@ try {
   process.exit(2);
 }
 
+if (opts.help) {
+  process.stdout.write(`web-toolbox doctor —— 桥接自检(18 项, 每条 FAIL 带"下一步")
+
+用法: node bridge/src/doctor.js [选项]
+
+选项(--flag=value 也支持):
+  --host <ip>            daemon 监听地址, 默认 127.0.0.1
+  --port <n>             daemon 端口, 默认 9280
+  --token <value>        令牌覆盖(默认读 ~/.web-toolbox/bridge-token)
+  --token-file <path>    令牌文件路径
+  --archive-dir <path>   归档目录(默认 ~/.web-toolbox/archive)
+  --archive-keep-days <n> 保留天数(只用 dry-run 展示会删哪些)
+  --help / -h            显示本帮助
+
+典型: 连不上时第一个跑它。18 项含令牌活体握手(需 daemon 在跑)、协议/包版本一致性。`);
+  process.exit(0);
+}
+
 const results = [];
 function check(name, ok, detail, hint) {
   results.push({ name, ok: !!ok, detail: detail || "" });

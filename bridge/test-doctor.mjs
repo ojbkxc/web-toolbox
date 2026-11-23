@@ -89,6 +89,15 @@ try {
     await sleep(300);
   }
 }
+// ⑤ --help / -h: 显示用法且退出 0(此前被忽略直接跑检查 —— CLI 最基本的约定)
+{
+  console.log("\n[doctor] --help / -h");
+  const rh = runDoctor(["--help"], {});
+  const rh2 = runDoctor(["-h"], {});
+  ok("--help 与 -h 都退出 0", rh.code === 0 && rh2.code === 0, { h: rh.code, s: rh2.code });
+  ok("--help 打印用法含选项", /--host/.test(rh.out) && /doctor/.test(rh.out), rh.out.slice(0, 60));
+  ok("--help 不跑检查(不应出现检查行)", !/\[PASS\]|\[FAIL\]/.test(rh.out), "出现了检查行");
+}
 console.log("\n[doctor] 参数错误");
     const r = runDoctor(["--port", "0"], { WEB_TOOLBOX_TOKEN: TOKEN });
     ok(r.code === 2, "退出码 2(参数错误)", r.code);
