@@ -187,6 +187,38 @@ chrome.debugger.onDetach.addListener((src) => {
   }
 });
 
+// 扩展快捷键 / 命令面板(manifest.commands 定义)。
+// 为什么需要: 没有 commands 时 chrome://extensions/shortcuts 是空的 —— 用户按快捷键没反应
+// 也无处发现这个能力。这里复用**已有的** toolboxHandleMessage 与 sidePanel.open, 不另写一套。
+if (chrome.commands && chrome.commands.onCommand) {
+  chrome.commands.onCommand.addListener((command) => {
+    (async () => {
+      try {
+        if (command === "open-options") { chrome.runtime.openOptionsPage(); return; }
+        if (command === "open-side-panel") {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (tab) await chrome.sidePanel.open({ tabId: tab.id }).catch(() => {});
+          return;
+        }
+        if (command === "toggle-recording") {
+          // 与 popup 按钮同一条消息路径: 录制中/暂停 → stop; 否则 → start(当前 tab)
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (!tab) return;
+          if (tab.url && !/^https?:/i.test(tab.url)) {
+            diag("warn", "attach", "快捷键: 当前页不是 http(s), 不发起录制");
+            return;
+          }
+          const type = (recState === "recording" || recState === "paused") ? "stopRecording" : "startRecording";
+          const payload = type === "startRecording" ? { type, tabId: tab.id } : { type };
+          toolboxHandleMessage(payload, () => {});
+        }
+      } catch (e) {
+        diag("warn", "attach", "快捷键处理失败: " + (e && e.message ? e.message : e));
+      }
+    })();
+  });
+}
+
 // ---- 请求事件 → 条目(全程同步判断, 无 await 竞态) ----
 // requestWillBeSent 带 url/method/headers/postData; 响应体等 loadingFinished 后异步补。
 const pending = new Map(); // requestId -> item(等响应)

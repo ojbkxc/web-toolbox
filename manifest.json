@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Web 工具箱",
-  "version": "1.1.47",
+  "version": "1.1.48",
   "description": "免 F12 录制接口流量,导出 JMeter/Python/HAR;可让 Claude Code 等 AI 客户端通过 MCP 抓包与操作页面。",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -33,5 +33,20 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "commands": {
+    "toggle-recording": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "开始/停止录制当前标签页"
+    },
+    "open-side-panel": {
+      "description": "打开 Web 工具箱侧栏"
+    },
+    "open-options": {
+      "description": "打开域名与 AI 接口配置"
+    }
   }
 }

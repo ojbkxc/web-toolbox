@@ -297,7 +297,7 @@ web-toolbox/
 ├── popup/                 极简启动器(状态徽章 + 录制控制 + 打开侧栏)
 ├── sidepanel/             三页工作台(录制列表+详情 / 导出格式 / Cookie 桥)
 ├── options/               域名白名单 + AI 接口配置页
-├── test/                  e2e 走查回归集(42 check_* + 3 e2e_* + scan_conflicts + run_all.js 一键全量 64 项)
+├── test/                  e2e 走查回归集(42 check_* + 3 e2e_* + scan_conflicts + run_all.js 一键全量 65 项)
 └── icons/
 ```
 

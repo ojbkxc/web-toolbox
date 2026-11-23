@@ -1,5 +1,17 @@
 # 更新记录
 
+## v1.1.48 — 用户旅程可用性(快捷键 + popup 状态机)
+
+- **补 manifest `commands`**: 之前 `chrome://extensions/shortcuts` 是**空的** —— 用户按快捷键没反应
+  也无处发现能力。新增 `toggle-recording`(Ctrl+Shift+Y) / `open-side-panel` / `open-options`,
+  background 用**已有** `toolboxHandleMessage` 路径处理, 不写第二套逻辑。
+- **新增 `test/check_user_journey.js`**(12 条): manifest commands 形态、popup 五键、侧栏空态,
+  以及 popup 状态机按钮显隐的**行为级**断言(idle/recording/paused/未配置域名 四态)。
+- **踩坑(全部是测试桩的错, 不是产品错)**: ①`common.getDomains` 用**回调式** storage.get,
+  我的 async 桩不调 cb → refresh 永远 pending → 四条断言一条没跑(输出仅 9 行);
+  ②`containsOrigin` 同理走回调; ③`shown()` 判据把 `style.display === ""` 当成隐藏,
+  导致四项全红(UI 其实是对的)。**教训: 桩要照 Chrome API 的真实形态写(回调/async 双形态)**。
+
 > 只记"改了什么、为什么、证据在哪"。完整评审过程见 [REVIEW.md](./REVIEW.md)。
 
 ## v1.1.47 — 工具行为级覆盖与规则闭环(2026-11-23)

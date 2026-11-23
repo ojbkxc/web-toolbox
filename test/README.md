@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 64 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 65 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -92,6 +92,8 @@ node test/check_xxx.js        # 单跑一个
 | check_repo_rules | AGENTS 硬规则 2/3/1 的机器执行: 测试里不许注释掉断言、不许框架级 .skip/.todo/xit(环境跳过 TC.skip 合法, 它会打 SKIP(env))、process.exit(0) 只能在末尾, 脚本/文档不许出现全量 add 用法, 仓库根无 package.json + 扩展运行时代码不引第三方 npm 包; **含闸门自证**(五组探针证明能分辨"描述规则"与"使用形态")(v1.1.46) | v1.1.46 |
 
 | check_tool_coverage | MCP 工具**行为级**覆盖闸门: 27 个工具必须每个都在 bridge/smoke.mjs 里被**真调过**(callTool/call/J 三种形态, 且不算注释与文档提及) —— 工具表只证明"存在", 这里证明"工具→协议→扩展三段通、参数没被吞";另断言 smoke 有 `--allow-control` 启动分支(控制类不是只测 forbidden)、调用的工具名无幻影;含自证(v1.1.47) | v1.1.47 |
+
+| check_user_journey | 用户旅程可用性(新人装完真的能用): manifest 必须有 commands(否则快捷键页是空的)且每条带 description;popup 五键齐;侧栏空态给"去配置";**popup 状态机按钮显隐行为级**(idle/recording/paused/未配置域名 四态, vm 跑真实 popup.js) —— 判据 style.display !== "none"(用 "" 表示显示)(v1.1.48) | v1.1.48 |
 
 ## 维护约定
 
