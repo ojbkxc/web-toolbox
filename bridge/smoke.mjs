@@ -19,6 +19,22 @@ let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log("  OK " + m); } else { fail++; console.log("  ✗ FAIL " + m); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// 端口就绪探测(代替固定 700ms): bridge spawn 后 WS listen 实测 <400ms;
+// TCP 连上即返回, 省一半等待且不受机器慢的影响。
+const net = await import("node:net");
+function waitPort(port, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const tryOnce = () => {
+      const sock = net.connect({ host: "127.0.0.1", port });
+      const done = (v) => { sock.destroy(); if (v || Date.now() - t0 > timeoutMs) resolve(v); else setTimeout(tryOnce, 60); };
+      sock.on("connect", () => done(true));
+      sock.on("error", () => done(false));
+    };
+    tryOnce();
+  });
+}
+
 function startBridge(extraArgs = []) {
   const p = spawn(process.execPath, [ENTRY, "--port", String(PORT), "--quiet", ...extraArgs], {
     env: { ...process.env, WEB_TOOLBOX_TOKEN: TOKEN },
@@ -125,7 +141,7 @@ function makeMcpClient(proc) {
   {
     console.log("\n[1] 鉴权");
     const proc = startBridge(["--allow-control"]);
-    await sleep(700);
+    await waitPort(PORT);
     let r = await connectRetry("wrong-token");
     ok(r.first.type === FRAME.ERROR && r.first.code === ERR.UNAUTHORIZED, "错误令牌被拒");
     r.ws.close();
@@ -146,7 +162,7 @@ function makeMcpClient(proc) {
   {
     console.log("\n[2] 请求响应与事件");
     const proc = startBridge(["--allow-control"]);
-    await sleep(700);
+    await waitPort(PORT);
 
     const { ws } = await connectRetry(TOKEN);
     serveExt(ws, (method, params) => {
@@ -303,7 +319,7 @@ function makeMcpClient(proc) {
   {
     console.log("\n[3] 控制类开关");
     const proc = startBridge([]);   // 不带 --allow-control
-    await sleep(700);
+await waitPort(PORT);
     const { ws } = await connectRetry(TOKEN);
     serveExt(ws, (m) => (Array.isArray(m) ? m : []));   // 返回合法空数组: net.list 必须是数组
 
@@ -326,7 +342,7 @@ function makeMcpClient(proc) {
   {
     console.log("\n[4] 扩展离线");
     const proc = startBridge([]);
-    await sleep(1200);   // 等它自己拉起 daemon
+    await waitPort(PORT); // 等它自己拉起 daemon(探测即走)
     const mcp = makeMcpClient(proc);
     await mcp.init();
     await sleep(500);
@@ -343,7 +359,7 @@ function makeMcpClient(proc) {
   {
     console.log("\n[5] 工具注解");
     const proc = startBridge([]);
-    await sleep(700);
+    await waitPort(PORT);
     const mcp = makeMcpClient(proc);
     await mcp.init();
     const j = await mcp.send("tools/list", {});
@@ -371,7 +387,7 @@ function makeMcpClient(proc) {
   {
     console.log("\n[8] 控制类工具全覆盖");
     const proc = startBridge(["--allow-control"]);
-    await sleep(700);
+    await waitPort(PORT);
     const { ws } = await connectRetry(TOKEN);
     serveExt(ws, (m, params) => {
       if (m === "rec.status") return { recState: "idle", count: 0 };
@@ -438,7 +454,7 @@ function makeMcpClient(proc) {
   {
     console.log("\n[5b] 导出体积守卫");
     const proc = startBridge(["--allow-control"]);
-    await sleep(700);
+    await waitPort(PORT);
     const { ws } = await connectRetry(TOKEN);
     serveExt(ws, (m) => {
       if (m === "net.list") {
@@ -476,7 +492,7 @@ function makeMcpClient(proc) {
   {
     console.log("\n[6] 错误语义");
     const proc = startBridge([]);   // 故意不开 --allow-control
-    await sleep(700);
+await waitPort(PORT);
     // 假扩展: net.list → 空集, net.get → null(模拟条目已被挤出缓冲)。
     // 注意不能靠"缺必填参数"验 bad_args —— MCP SDK 会先按 inputSchema 拒掉, 到不了工具层。
     const { ws } = await connectRetry(TOKEN);
