@@ -1,7 +1,7 @@
 // 回归测试: 全模块单测(node 直跑, 无依赖)。
 // 用法: node test_regression.js
 const assert = require("assert");
-const { execSync } = require("child_process");
+const TC = require("./test/lib/toolchain.js");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -207,6 +207,10 @@ const j = (o) => JSON.stringify(o);
   const bigResp = "x".repeat(200000);
   const rowBig = CM.harvestToExportRows([{ id: "rb", method: "GET", url: "https://a.b.com/big", headers: {}, body: "", status: 200, response: bigResp, mime: "application/json", ts: "2026-09-17T09:00:00Z", durationMs: 5 }])[0];
   assert.ok(rowBig.response === bigResp, "JSONL 行 response 全量不截断(与 HAR content.text 同口径)");
+  // content.size 是 UTF-8 字节数(不是字符数): 中文 1 字符=3 字节, 汇总传输量时用 .length 会低报
+  const harCn = CM.buildHar([{ method: "GET", url: "https://a.b.com/cn", headers: {}, body: "", status: 200, response: "你好", mime: "text/plain", ts: "", durationMs: 1 }]);
+  assert.strictEqual(harCn.log.entries[0].response.content.size, 6, "HAR content.size = UTF-8 字节数(中文 2 字符 → 6)");
+  assert.strictEqual(harCn.log.entries[0].response.content.text, "你好", "HAR content.text 原样(不被 size 影响)");
   const harBig = CM.buildHar([{ id: "rb", method: "GET", url: "https://a.b.com/big", headers: {}, body: "", status: 200, response: bigResp, mime: "application/json", ts: "2026-09-17T09:00:00Z", durationMs: 5 }]);
   assert.ok(harBig.log.entries[0].response.content.text === bigResp, "HAR content.text 全量(对照组: 两侧同口径)");
 }
@@ -220,10 +224,10 @@ const J = require("./jmx.js");
     { method: "DELETE", url: "https://api1.test.com/web/del", path: "/web/del", query: "", headers: {}, body: '{"id":9}' },
   ];
   const jmx = J.buildJmx(entries);
-  // XML 合法性
-  const check = `python -c "import xml.dom.minidom,sys; xml.dom.minidom.parseString(open(sys.argv[1],encoding='utf-8').read())" "${path.join(WORK, "_tmp.jmx").replace(/\\/g, "/")}"`;
-  fs.writeFileSync(path.join(WORK, "_tmp.jmx"), jmx, "utf-8");
-  execSync(check, { shell: "bash" });
+  // XML 合法性: 纯 JS 良构校验(接受面等价 xml.dom.minidom.parse)。早先用 bash+python 跑,
+  // Windows PATH 里没有 bash 时 spawnSync ENOENT —— 46 项门禁环境性假红, 与代码无关。
+  const xmlJmx = TC.checkXml(jmx);
+  assert.ok(xmlJmx.ok, "JMX 应为良构 XML: " + xmlJmx.error);
   // UDF 必须是 ${__P(name,default)} 才能被 -J 覆盖; threads 默认 1(巡检安全口径, v1.0.90)
   assert.ok(jmx.includes("${__P(threads,1)}"), "UDF threads 应为 __P 格式且默认 1(巡检安全)");
   assert.ok(jmx.includes("${__P(loops,1)}"), "UDF loops 应为 __P 格式");
@@ -243,7 +247,6 @@ const J = require("./jmx.js");
   assert.ok(jmx.includes("${__P(think,500)}"), "think UDF 应为 __P 格式");
   assert.ok(jmx.includes("ConstantTimer"), "应有 ConstantTimer");
   assert.ok(jmx.indexOf("ConstantTimer") > jmx.lastIndexOf("HTTPSamplerProxy"), "Timer 应在采样器之后(每轮末尾停顿)");
-  fs.unlinkSync(path.join(WORK, "_tmp.jmx"));
 }
 
 // ---------- 5f) 完全相同请求去重 + CSV 数据驱动(v1.0.82) ----------
@@ -407,11 +410,9 @@ const AUTH = require("./auth.js");
   const bizIdx = once.indexOf("/web/list");
   assert.ok(preLoginIdx > oncePreIdx && preProfileIdx > oncePreIdx, "前置采样器应在 OnceOnly 内");
   assert.ok(bizIdx > once.indexOf("</hashTree>") && bizIdx > preProfileIdx, "业务应在 OnceOnly 之后");
-  // XML 合法
-  const f2 = path.join(WORK, "_tmp2.jmx");
-  fs.writeFileSync(f2, once, "utf-8");
-  execSync(`python -c "import xml.dom.minidom; xml.dom.minidom.parse(open(r'${f2}',encoding='utf-8'))"`, { shell: "bash" });
-  fs.unlinkSync(f2);
+  // XML 合法(纯 JS 良构校验, 见 test/lib/toolchain.js)
+  const xmlOnce = TC.checkXml(once);
+  assert.ok(xmlOnce.ok, "前置 OnceOnly 的 JMX 应良构: " + xmlOnce.error);
   // 3) autoRelogin: IfController 两个 + BeanShell 置变量 + JSR223 失效检测
   const relogin = J.buildJmx(entries, { prelude: [1, 2], autoRelogin: true, sessionMarkers: ["统一认证"] });
   assert.ok(relogin.includes("IfController"), "autoRelogin 应生成 IfController");
@@ -419,10 +420,8 @@ const AUTH = require("./auth.js");
   assert.ok(relogin.includes("BeanShellSampler"), "应有置登录状态采样器");
   assert.ok(relogin.includes("JSR223PostProcessor"), "应有会话失效检测");
   assert.ok(relogin.includes("__logged_in"), "应使用 __logged_in 变量");
-  const f3 = path.join(WORK, "_tmp3.jmx");
-  fs.writeFileSync(f3, relogin, "utf-8");
-  execSync(`python -c "import xml.dom.minidom; xml.dom.minidom.parse(open(r'${f3}',encoding='utf-8'))"`, { shell: "bash" });
-  fs.unlinkSync(f3);
+  const xmlRelogin = TC.checkXml(relogin);
+  assert.ok(xmlRelogin.ok, "autoRelogin 的 JMX 应良构: " + xmlRelogin.error);
 }
 
 // ---------- pyscript ----------
@@ -436,7 +435,8 @@ const P = require("./pyscript.js");
   // 生成的脚本可编译(编译产物 __pycache__ 落在 WORK 临时目录, 不污染扩展根)
   const f = path.join(WORK, "_tmp.py");
   fs.writeFileSync(f, script, "utf-8");
-  execSync(`python -m py_compile "${f.replace(/\\/g, "/")}"`, { shell: "bash" });
+  if (TC.pythonBin()) TC.pyRun(["-m", "py_compile", f]);
+  else TC.skip("pyscript py_compile", "未找到 python 3 解释器");
   // glob state: 生成的 find_state_file 必须能跑且能找到任意命名的 cookies*.state.json
   // (用只导出 build_session 逻辑的方式验证: import 脚本会真的发请求, 所以 sed 掉 main 调用)
   const stateDir = fs.mkdtempSync(path.join(WORK, "state_"));
@@ -448,15 +448,18 @@ const P = require("./pyscript.js");
   // exec() 里没有 __file__, 所以以 subprocess 方式跑一个只调 build_session 的驱动脚本
   fs.writeFileSync(path.join(stateDir, "drive.py"),
     `import os, sys\nsys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))\nimport replay\ns = replay.build_session()\nassert len(s.cookies) == 1, "cookie count"\n`, "utf-8");
-  const runDrive = () => execSync(`python -X utf8 "${path.join(stateDir, "drive.py").replace(/\\/g, "/")}"`,
-    { shell: "bash", encoding: "utf-8" });
-  const out = runDrive();
-  assert.ok(out.includes("已加载 1 个 Cookie"), "glob 应命中 cookies_*.state.json(不用改名): " + out);
-  // 默认名也兼容(精确优先)
-  fs.writeFileSync(path.join(stateDir, "cookies.state.json"),
-    JSON.stringify({ cookies: [{ name: "X", value: "1", domain: ".t.com", path: "/" }] }), "utf-8");
-  const out2 = runDrive();
-  assert.ok(out2.includes("已加载 1 个 Cookie"), "精确名优先: " + out2);
+  const runDrive = () => TC.pyRun(["-X", "utf8", path.join(stateDir, "drive.py")]);
+  if (TC.pythonBin()) {
+    const out = runDrive();
+    assert.ok(out.includes("已加载 1 个 Cookie"), "glob 应命中 cookies_*.state.json(不用改名): " + out);
+    // 默认名也兼容(精确优先)
+    fs.writeFileSync(path.join(stateDir, "cookies.state.json"),
+      JSON.stringify({ cookies: [{ name: "X", value: "1", domain: ".t.com", path: "/" }] }), "utf-8");
+    const out2 = runDrive();
+    assert.ok(out2.includes("已加载 1 个 Cookie"), "精确名优先: " + out2);
+  } else {
+    TC.skip("pyscript Cookie glob 实跑", "未找到 python 3 解释器");
+  }
   fs.rmSync(stateDir, { recursive: true, force: true });
   fs.unlinkSync(f);
   // def 与 main 调用一致(重名加后缀); v1.0.1 起带 ctx 参数池(AI 链共享);
@@ -734,4 +737,4 @@ const A = require("./aireport.js");
   assert.ok(!("devtools_page" in mf), "v0.3.1 已去 F12 化, 不应有 devtools_page");
 }
 
-console.log("ALL REGRESSION TESTS PASSED");
+console.log("ALL REGRESSION TESTS PASSED" + TC.skipSummary());

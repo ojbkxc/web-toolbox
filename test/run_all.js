@@ -18,6 +18,22 @@ const suites = [
   { name: "scan_conflicts", file: path.join(__dirname, "scan_conflicts.js") },
 ];
 
+// 桥接层(unit/smoke)需要 bridge/node_modules —— 扩展本体仍然零依赖, 这里按依赖是否装过决定跑不跑。
+// 没装就打印 SKIP(env) 并跳过, 不伪装通过(AGENTS.md 的环境限制口径)。
+const BRIDGE_DEPS = fs.existsSync(path.join(ROOT, "bridge", "node_modules", "ws"));
+if (BRIDGE_DEPS) {
+  const scanIdx = suites.findIndex((s) => s.name === "scan_conflicts");
+  const bridgeSuites = [
+    { name: "bridge-unit", file: path.join(ROOT, "bridge", "unit.mjs") },
+    { name: "bridge-exporters", file: path.join(ROOT, "bridge", "test-exporters.mjs") },
+    { name: "bridge-smoke", file: path.join(ROOT, "bridge", "smoke.mjs") },
+  ];
+  if (scanIdx >= 0) suites.splice(scanIdx, 0, ...bridgeSuites);
+  else suites.push(...bridgeSuites);
+} else {
+  console.log("  SKIP(env) bridge-unit/bridge-exporters/bridge-smoke — bridge/node_modules 未安装(cd bridge && npm install)");
+}
+
 let failed = [];
 for (const s of suites) {
   const t0 = Date.now();

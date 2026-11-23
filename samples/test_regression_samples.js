@@ -44,24 +44,32 @@ for (const s of samples) {
 // ---------- 2. 每个样本都能被 buildJmx 消化(不炸 + XML 合法) ----------
 const fs = require("fs");
 const os = require("os");
-const { execSync } = require("child_process");
+const TC = require(path.join(__dirname, "..", "test", "lib", "toolchain.js"));
 const WORK = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "webtoolbox_smpl_"));
 for (const s of samples) {
   if (!s.entries.length) continue;
-  // 结构样本(纯 jmx 结构, path 为相对/无 domain)不代表真实请求, 跳过导出校验
-  if (!s.entries.every((e) => /^https?:/i.test(e.url))) {
-    console.log(`  (skip buildJmx: ${s.dir} — 非绝对 URL)`);
-    continue;
-  }
+  // 结构样本(从 .jmx 解析出的相对路径)没有域名。早先直接 skip —— 结果 buildJmx 对
+  // "无域名/相对路径"输入的兜底行为零覆盖。这里合成保留域(sample.invalid, RFC 6761 保留)
+  // 照常跑导出器: 既保住"引擎能消化每个样本"的初衷, 又顺手覆盖了兜底分支。
+  const synthesized = !s.entries.every((e) => /^https?:/i.test(e.url || ""));
+  const forExport = s.entries.map((e) => {
+    if (/^https?:/i.test(e.url || "")) return e;
+    const p = e.path || (String(e.url || "").startsWith("/") ? e.url : "/");
+    return { ...e, url: "https://sample.invalid" + p };
+  });
   try {
-    const jmx = J.buildJmx(s.entries.map((e) => ({
+    const jmx = J.buildJmx(forExport.map((e) => ({
       method: e.method, url: e.url, path: e.path, query: e.query,
       headers: e.headers, body: e.body,
     })));
-    const f = path.join(WORK, "x.jmx");
-    fs.writeFileSync(f, jmx, "utf-8");
-    const check = `python -c "import xml.dom.minidom,sys; xml.dom.minidom.parseString(open(sys.argv[1],encoding='utf-8').read())" "${f.replace(/\\/g, "/")}"`;
-    execSync(check, { shell: "bash" });
+    // XML 良构: 纯 JS 校验(不再 spawn bash+python —— PATH 无 bash 的机器上必然 ENOENT)
+    const xml = TC.checkXml(jmx);
+    if (!xml.ok) throw new Error("生成的 JMX 非良构: " + xml.error);
+    // 合成域的样本额外钉一条: 每个条目都要产出采样器(不能被"无域名"静默丢掉)
+    const samplers = (jmx.match(/<HTTPSamplerProxy /g) || []).length;
+    if (synthesized && samplers !== forExport.length) {
+      throw new Error(`结构样本合成域后采样器数不符: ${samplers} != ${forExport.length}`);
+    }
   } catch (e) {
     failures.push(`${s.dir}: buildJmx 炸了: ${e.message}`);
   }

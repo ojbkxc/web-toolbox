@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 46 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 59 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -29,14 +29,14 @@ node test/check_xxx.js        # 单跑一个
 | check_early_buffer | SW 冷启动窗口(earlyBuffer)缓冲/补处理/域名过滤同路径 + containsPermission/refreshDomainCache 消息接线 + unmatchedHosts 生命周期/淘汰策略 + 换 tab 竞态窗口 | v1.0.52 |
 | check_export_fields | 四导出器字段消费差异契约(保真 vs 压测语义, 防格式间静默漂移) | v1.0.52 |
 | check_engine_edge | 入列乱序修复/关 tab pending 语义/截断/信封/pauseRecording 在途不丢半截/合帧批语义(同 tick 攒一批一次写+批内 FIFO) + pause/stop sendResponse 对称(storage.set 抛错走 {ok:false} 非永挂, v1.0.64) + 120 条大批量合帧无批上限退化(8b, v1.0.71) + clearHarvest 派生键清单含 pickIds(5 键全清+4 旧键回归锚+空信封落库, 10, v1.0.78) + 暂停→继续(同 tab)全链路(7b, #178 修复锚: attach 容错大小写不敏感/同 tab 继续不清 pending/在途横跨暂停窗口照常落库, v1.0.81) + 暂停→换 tab 继续 pending 清空(7c) + 重录全链引擎侧语义(7d: stop→clear→start 同 tab, 旧会话在途作废不混入新会话, v1.0.81) | v1.0.81 |
-| check_export_clean | 导出净化产物级验证:HAR 1.2 required 字段齐/超时 N/A/durationMs 正值分支(v1.0.59)/过滤词作用于导出 + 空 headers 条目不挂空 HeaderManager(对照组断言, v1.0.73) + JMX 挂 CSVDataSet/列 UDF 兜底/data.csv 伴生下载(e2e_popup 3a-3d2: v1.0.82) | v1.0.82 |
+| check_export_clean | 导出净化产物级验证:HAR 1.2 required 字段齐(含 log.creator 与 content.size/mimeType、cache 对象)/超时 N/A/durationMs 正值分支(v1.0.59)/过滤词作用于导出 + 空 headers 条目不挂空 HeaderManager(对照组断言, v1.0.73) + JMX 挂 CSVDataSet/列 UDF 兜底/data.csv 伴生下载(e2e_popup 3a-3d2: v1.0.82) | v1.0.82 |
 | check_single_source | 单源化探针:SESSION_MARKERS/60s 看门狗双 realm 词法可达 + SLOW_MS/MID_MS 声明+消费计数(无字面量残留) | v1.0.59 |
-| (根)test_regression | 全模块单测; 含导出净化 5c SSE 双形态判定(响应 mime + headers 兜底, v1.0.56)与 AUTH_RULES 零覆盖面(v1.0.55) + JSONL/HAR 保真同口径 5e(v1.0.71) + classifyDynamic 混合集首值优先 2b(v1.0.73) + JMX 主机变量化 HOST_n(UDF __P 值可 -J 覆盖/采样器 ${HOST_n} 引用/零字面量残留, v1.0.79-1.0.80) + PY main base_url 覆盖位(def/call 一致签名演化, v1.0.79) + 去重键语义/collectCsvData 录制值+占位符防御/header 列剔除/buildJmx CSVDataSet+UDF 兜底+冲突列过滤/CSV 模板双引号转义(5f, v1.0.82) | v1.0.82 |
-| (根)samples/test_regression_samples | 样本库回归: 15 样本全引擎消化 + meta 计数对齐 + 认证形态 + 引擎识别断言(4b) + auth 真实样本锚(4c) + SSE mime 样本锚(4e) + readJmx 反转义 roundtrip(4f, v1.0.70) + readJmx 变量化 domain 分支(4f2: ${HOST_n} 保留原样/path.query 不被伪 URL 解析污染, v1.0.79) + 变量分支怪形态(4f3: 部分引用走 splitUrl 兜底/__P 函数走变量分支, v1.0.80) | v1.0.80 |
+| (根)test_regression | 全模块单测(HAR content.size 按 UTF-8 字节计, 中文不被低报); 含导出净化 5c SSE 双形态判定(响应 mime + headers 兜底, v1.0.56)与 AUTH_RULES 零覆盖面(v1.0.55) + JSONL/HAR 保真同口径 5e(v1.0.71) + classifyDynamic 混合集首值优先 2b(v1.0.73) + JMX 主机变量化 HOST_n(UDF __P 值可 -J 覆盖/采样器 ${HOST_n} 引用/零字面量残留, v1.0.79-1.0.80) + PY main base_url 覆盖位(def/call 一致签名演化, v1.0.79) + 去重键语义/collectCsvData 录制值+占位符防御/header 列剔除/buildJmx CSVDataSet+UDF 兜底+冲突列过滤/CSV 模板双引号转义(5f, v1.0.82) | v1.0.82 |
+| (根)samples/test_regression_samples | 样本库回归(结构样本合成 sample.invalid 保留域后也走 buildJmx, 不再 skip; 采样器数必须等于条目数): 15 样本全引擎消化 + meta 计数对齐 + 认证形态 + 引擎识别断言(4b) + auth 真实样本锚(4c) + SSE mime 样本锚(4e) + readJmx 反转义 roundtrip(4f, v1.0.70) + readJmx 变量化 domain 分支(4f2: ${HOST_n} 保留原样/path.query 不被伪 URL 解析污染, v1.0.79) + 变量分支怪形态(4f3: 部分引用走 splitUrl 兜底/__P 函数走变量分支, v1.0.80) | v1.0.80 |
 | check_list_enhance | 列表增强:状态码颜色/过滤语义/单删联动(就近补选, v1.0.77)/cURL + 重放消费 textarea 编辑值(6a-6f: 编辑 body/头真实注入、坏行过滤、未编辑对照, v1.0.73) + 复选框全量修复(4b 场景: 清洗清死勾/勾选持久化 toolbox.pickIds/详情摘要/退出清键/空可见集全选护栏/重开恢复端到端, v1.0.77) + 清洗去重完全相同请求(4n: method+path+query+body 全同去重保首条/headers-响应-耗时不同不拆/状态明示含重复/pickIds 死 id 同清/GET-POST 同 path 不算重复, v1.0.82) | v1.0.82 |
 | check_manual_prelude | manualPrelude 持久化与还原 + manual∩auto 优先级(manual=false 镇住 SSO auto 命中/refreshPrelude 重扫不覆盖, v1.0.64) | v1.0.64 |
 | check_nonhttp_guard | 非 http(s) 页录制前置拦截(popup+sidepanel) + sidepanel"未配置域名"空态指引行为级(v1.0.74, #168 方向③) + 重录按钮前置拦截(4: chrome:// 页点「↻ 重录」不发起 stop/clear/start 录制链, v1.0.81) + 重录正向全链(6/6a/6b: http 页按序 stop→clear→start + tabId + 6c: 有数据时 confirm 取消不发起录制链) | v1.0.81 |
-| check_options_page | options 旅程:域名增删改授权链/LLM 保存手势 + 删除域名撤销链路端到端(撤销 origins 与申请对称/granted 集同步/清单过滤/呈现层授权态, v1.0.70) | v1.0.70 |
+| check_options_page | options 旅程:域名增删改授权链/LLM 保存手势 + 删除域名撤销链路端到端(撤销 origins 与申请对称/granted 集同步/清单过滤/呈现层授权态, v1.0.70) + 并发添加串行锁(同 tick 两次 addDomain 都落库、既有域名不被吞) + 条件等待替代固定 sleep(v1.1.5) | v1.1.5 |
 | check_page_eval_press | page.eval 值规约(Map/Set→对象数组、DOM 节点→[Node tag]、函数/循环引用/超深超量标记, 不再静默返回 {}) + page.press 按键表补 code/keyCode(表内键/单字符 KeyA-65/大写自动按 Shift/符号宁缺勿错/表外键与原型同名键都退回只传 key) + 快照标 [disabled](原生与 aria-disabled) + 只读/禁用/hidden 退回直接置空 + 编辑器吞键时兜底置空(clearedVia=direct, 经原型 setter) + page.type 逐字符保真模式(默认 insertText 不变/键按下-抬起顺序/非 ASCII 回落 insertText/回执 typedVia) + 死代码 bridgeSafeValue 已清(v1.1.4) | v1.1.4 |
 | check_page_locate | 页面定位健壮性:命中测试(遮挡上报 covered/coveredBy、shadow 宿主反查、视口外不乱下结论) + 滚动落定轮询(元素移动时取落定坐标而非中途坐标) + 清空输入框走真实 Backspace(有内容才按键/Range 选中 contenteditable/非文本控件保持旧行为/清干净回执 clearedVia=key) + 悬停同源(vm 跑真实 bridge-client, 注入函数直调 + CDP 调用序列断言, v1.1.3) | v1.1.3 |
 | check_poll_perf | popup/sidepanel 轮询移除+onChanged 推送语义/renderList 3000 条底线/签名启发式 + recState 徽章双面全枚举对账(v1.0.60) | v1.0.60 |
@@ -52,6 +52,38 @@ node test/check_xxx.js        # 单跑一个
 | scan_conflicts | 同页串联 script 顶层声明撞名扫描(解析期杀全页防线) | v0.3.9 |
 | (合并)check_ai_body2 | 并入 check_ai_body 作字符串 body 对照组 | v1.0.9 |
 
+| check_toolchain | test/lib/toolchain.js 自检: checkXml 接受面(真 JMX 产物 + Apache JMeter 官方测试计划)与拒绝面(未闭合/不配对/重复属性/无引号/裸 &/多根/零根/文本裸 <)逐条对拍 + python 探测与 pyRun(非零退出即抛错) + waitHttp(真监听 true/关闭端口 false) + skip 记账不伪装通过(v1.1.5) | v1.1.5 |
+
+| check_bridge_annotations | MCP 工具注解契约(源码级, 零依赖): ANNOTATIONS 表 ↔ register("...") 注册集互为子集、readOnlyHint 布尔、destructive⇒非只读、控制闸门工具不得标只读(已复核读例外仅 page.snapshot/screenshot/wait)、不碰闸门的必须标只读、tool→method 落在协议白名单(v1.1.6) | v1.1.6 |
+
+| check_bridge_errors | 桥接错误语义契约: 线上 ERR.* 码 ↔ errors.js 文案表一一对应、每条错误必带"下一步"、渲染格式 `错误[code]: 原因`+换行+"下一步"、tools.js 不许回退旧形态(`fail("...")`/手写"错误: "前缀)、异常带 code 按码查表/裸异常退化仍给下一步(v1.1.7) | v1.1.7 |
+
+| bridge/test-exporters | 导出口径单测(桥接层): pick 圈定语义/HAR 保真(不剔除静态·status=0·缺 duration→-1)/JMX·PY 压测口径(剔除静态/OPTIONS/SSE, 全噪音明确报错)/correlate 返回形态 + **单源证明**(猴补扩展 jmx.buildJmx / pyscript.buildPyScript / common.buildHar, bridge 输出必须立刻变)(v1.1.8) | v1.1.8 |
+
+| check_doc_counts | 文档计数/版本漂移闸门: README "共 N 个工具" ↔ 实现、文档间 .md 链接无断链、SECURITY.md 覆盖三道闸门等; 现算 suite 数(根 2+samples 1+test/ 发现+scan_conflicts+bridge 三层)并与 AGENTS/CLAUDE/test README/README/REVIEW 里的 "N 项/N/N/版本" 对拍, 不一致直接红(check_doc_counts 自身也算一个 suite)(v1.1.11) | v1.1.11 |
+
+| check_bridge_schema | 工具 schema 可读性契约(源码级): 27 个工具的 inputSchema 顶层字段**全部**带 `.describe()`(模型靠它理解参数)、顶层 spread 只允许已描述的 filterShape、每个工具都有 title/description、`structured()` 调用与 outputSchema 成对、filterShape 自身字段也都带描述(v1.1.12) | v1.1.12 |
+
+| check_tool_table | 工具表 ↔ 实现一致性: 27 个 register 工具必须都出现在 bridge/README「工具一览」表(v1.1.1 的 chain_replay/console_read/console_clear 曾长期漏在表外)、表中不得出现无实现的工具名、表格"需要 --allow-control"列(✓)必须与 tools.js 是否调 controlGuard 严格一致(标错会让模型以为免权限)(v1.1.13) | v1.1.13 |
+
+| check_security_claims | SECURITY.md 的每条安全事实 ↔ 实现: 权限清单与 manifest 集合一致/无 host_permissions/optional 只两类协议、默认回环与 9280、令牌 0600+目录 0700+timingSafeEqual、控制类默认关闭且 hub 二次拦截、page_eval 标破坏性、扩展零依赖(根无 package.json)、"不做"清单在位(v1.1.17) | v1.1.17 |
+
+| check_ai_hygiene | AI 管线两级脱敏: `scrubLong`(40+ 长串) + `scrubSensitiveKeys`(password/secret/sign 类键名, 值无论长短), token 类键名**不**进强脱敏(建链靠短 token 匹配); 表单体/JSON 体/URL query/驼峰键四形态覆盖(v1.0.95) | v1.0.95 |
+| check_auto_chain | 轻量自动关联(autoDetectChain 不烧 LLM): 响应叶子值出现在后续请求 → 生成链并带 value 快照; 纯数字单号(≥8 位)/裸值 JSON/表单 k=v 三形态; mergeChain 去重(AI 链优先); 端到端到 buildJmx 的 JSONPostProcessor + CSVDataSet | v1.0.96 |
+| check_console | 控制台日志采集: CDP RemoteObject 五形态归一化 / 环形缓冲有界(条数+字节) / 级别映射(log/warn/error) / exceptionThrown 归一化 / 与 harvest 完全隔离(清录制不影响日志) | v1.0.x |
+| check_jmx_auto_assert | JMX 自动断言/报告组件: 每个采样器挂 ResponseAssertion(HTTP 200) + JSONPathAssertion(从录制响应推断成功指示字段, 不硬编码成功码) + 结果落盘组件 | v1.0.88 |
+| check_jmx_setup_login | setUp 线程组登录模式: 全局只登 1 次(SetUpThreadGroup 单线程单循环)、前置链在 setUp 内、cookie 拼串进 `props.shared_cookie`、主线程组 HeaderManager 引用 `${__P(shared_cookie)}` | v1.0.91 |
+| check_mcp_regression | MCP 回归能力工具: chain_replay/console_read/console_clear 注册与控制白名单放行/拦截、chain_replay 汇总组装不传完整响应体、console 读写转发、协议方法表与扩展分发一致性 | v1.1.1 |
+| check_page_tab | 侧栏「页面」页签: pageDispatch 转发白名单(13 个 page.*/tab.* 方法放行, 导出/录制/关联/未知方法拦截)、桥接未加载时的明确报错、params 原样透传、HTML/JS 接线 | v1.0.x |
+| check_ui_fixes | 侧栏 UI 细节: 格式卡片 label 双翻转根因(不再手动翻 checked)、清洗后计数/prelude UI 同步、勾选模式退出需确认、滚动位置保持 | v1.0.94 |
+| check_unmatched_hint | 部分漏录诊断: `unmatchedHosts` 在 count>0 时也要提示(不再只在空列表时出现)、sidepanel/popup 两处提示条、updateUnmatchedHint 逻辑分支 | v1.0.92 |
+
+| check_bridge_attach | 桥接 debugger 借用语义(vm 跑真实 bridge-client, chrome.debugger 全 stub): 自己 attach 成功 → 用完 detach 一次且 detach 时已挂 `toolboxBridgeOwnDetach` 标记;**录制引擎已 attach("Another debugger is already attached") → 借用且 detach 0 次**(不许把录制踹掉);其它 attach 错误 → 抛出指明原因;detach 抛错不影响结果;标记 1s 后自动摘除(v1.1.35) | v1.1.35 |
+
+| check_bg_detach_guard | background 侧"桥接自发 detach 不清录制状态"守卫(vm 跑真实 background.js): 标记 `toolboxBridgeOwnDetach` 含该 tabId 时 onDetach 必须直接 return(**detach 0 次、不写 storage**);非桥接 detach(用户点黄条取消/被抢走)必须真的 detach 并清 attach 记录;标记缺失不抛错仍清理;无 tabId 事件不炸(v1.1.36) | v1.1.36 |
+
+| check_ui_wiring | 页面 JS ↔ HTML 接线闸门(sidepanel/popup/options 三对): `$("literal")`/`getElementById("literal")` 的 id 必须存在于「HTML 静态 id ∪ JS 模板 id」(侧栏详情面板是 innerHTML 拼的);拼接形态(如 `$("pg"+tab)`)不参与判定以免误红;HTML id 不得重复;role=tab 的 aria-controls 必须指向真实面板;控件不得"既无引用也无内联事件"(v1.1.37) | v1.1.37 |
+
 ## 维护约定
 
 - 文件名保持 `check_*.js` / `e2e_*.js` 前缀,`run_all.js` 自动发现;禁用 `_` 开头命名(Chrome 拒载扩展目录下此类文件)
@@ -61,3 +93,11 @@ node test/check_xxx.js        # 单跑一个
 - vm realm 测试断言"加载后状态"前必须显式 `await vm.runInContext('loadHarvest()')`——storage.get 异步回调链,等 30~50ms 不保证 entries 已置入
 - 测试文件与被测源文件同改同提交;新增能力先补测试再收尾
 - scan_conflicts 殿后:它约束"新增 script 文件"动作本身,新增 sidepanel/popup script 后必跑
+- **改完 suite 数或版本必须同步五份文档**(v1.1.11): AGENTS/CLAUDE/test README/README/REVIEW; `check_doc_counts` 会红, 别手改数字凑绿
+- **禁止 shell 出去调 bash/python**(v1.1.5):Windows PATH 里通常只有 git.exe, 硬编码 `{ shell: "bash" }` 会让整套环境性假红;一律走 `test/lib/toolchain.js`(`pyRun` 直呼解释器, 探测不到记 `SKIP(env)`)
+- **禁止固定 `sleep(N)` 当同步原语**(v1.1.5):异步链等不到就假红(check_options_page 曾 6 跑 5 红);用 `waitFor` 等"用户可见完成点"(渲染产物/提示文案), 超时后断言给出真实失败信息
+- **错误文案只许来自 `bridge/src/errors.js`**(v1.1.7): 工具层 `fail(code, msg)` 首参必须是码(LOCAL.*/ERR.*), 渲染统一为 `错误[code]: 原因` + `下一步: 动作`; 新增码要同时进表, 由 check_bridge_errors 兜底
+- **验证 SKIP(env) 分支**: `WEBTOOLBOX_NO_PYTHON=1 node test/run_all.js` 强制"没有 python 解释器",
+  用来实跑那些平时走不到的降级路径(本机同时有 python 与 `py` launcher, 光从 PATH 摘 "python" 段
+  并不能真正模拟缺解释器)。期望: 相关项打 `SKIP(env)` + 退出码 0, 摘要里列出跳过项。
+- XML 良构校验用 `checkXml`(纯 JS, 接受面等价 `xml.dom.minidom.parse`), 不再为一条断言引入外部解释器

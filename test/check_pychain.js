@@ -4,11 +4,20 @@
 //   3. 链定位: id 优先/下标兜底/源不在集跳过/倒序跳过
 //   4. 生成脚本真实跑(mock server): login 提取 → save body 注入 → list query 注入, server 侧断言
 // 运行前提: mock server 在 18999(脚本自带起停, 用完即杀)
-const { execSync, spawn } = require("child_process");
+//
+// 2026-11 走查修复(环境性假红): 原实现用 `execSync(..., { shell: "bash" })` 跑 python 与
+// heredoc 轮询。Windows 上 PATH 只有 git.exe、没有 bash 时整个文件第一批断言就 ENOENT(exit 1),
+// 与 PY 导出质量无关。现在统一走 test/lib/toolchain.js:
+//   · python 按 WEBTOOLBOX_PYTHON → python → python3 → py -3 探测, argv 直呼, 不经 shell;
+//   · 等端口用 Node http 轮询(替代 heredoc 里的 python 轮询);
+//   · 探测不到 python 时记 SKIP(env), 仍跑完全部静态断言(生成物形态/链定位/变量同源),
+//     只是不谎报"真实回放过"。
+const { spawn } = require("child_process");
 const ROOT = require('path').resolve(__dirname, '..');
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const TC = require(path.join(__dirname, "lib", "toolchain.js"));
 
 const P = require(ROOT + "/pyscript.js");
 let fails = 0;
@@ -56,14 +65,24 @@ class H(BaseHTTPRequestHandler):
             self._r(200, {"resultCode": "0", "ok": False, "seen": self.path})
 HTTPServer(("127.0.0.1", 18999), H).serve_forever()
 `;
-const serverFile = path.join(WORK, "srv.py");
-fs.writeFileSync(serverFile, SERVER_SRC, "utf-8");
-const srv = spawn("python", ["-X", "utf8", serverFile], { stdio: "ignore" });
-// 等 server 起来
-execSync("python - <<'EOF'\nimport time, urllib.request\nfor _ in range(50):\n    try:\n        urllib.request.urlopen('http://127.0.0.1:18999/login', data=b'{}', timeout=1)\n        break\n    except Exception:\n        time.sleep(0.1)\nEOF", { shell: "bash" });
+const py = TC.pythonBin();
+let srv = null;
+if (py) {
+  const serverFile = path.join(WORK, "srv.py");
+  fs.writeFileSync(serverFile, SERVER_SRC, "utf-8");
+  srv = spawn(py.bin, [...py.prefix, "-X", "utf8", serverFile], { stdio: "ignore", windowsHide: true });
+  srv.on("error", () => { /* 起不来由 waitHttp 兜底成显式失败 */ });
+} else {
+  TC.skip("check_pychain 真实回放(mock server/驱动脚本)", "未找到 python 3 解释器");
+}
 
 (async () => {
   try {
+    if (srv) {
+      const up = await TC.waitHttp("http://127.0.0.1:18999/login", 8000);
+      if (!up) throw new Error("mock server 未在 18999 就绪(8s)");
+    }
+
     const mkEntries = () => ([
       { id: "p0", method: "POST", url: "https://h.com/login", path: "/login", query: "", headers: {}, body: "{}", status: 200, response: "", ts: "" },
       { id: "p1", method: "POST", url: "https://h.com/save", path: "/save", query: "", headers: {}, body: '{"orderNo":"OLD","x":1}', status: 200, response: "", ts: "" },
@@ -83,10 +102,14 @@ execSync("python - <<'EOF'\nimport time, urllib.request\nfor _ in range(50):\n  
     const script = P.buildPyScript(mkEntries(), "cookies.state.json", { aiChain: chain });
 
     // 1. py_compile
-    const py = path.join(WORK, "gen.py");
-    fs.writeFileSync(py, script, "utf-8");
-    execSync(`python -m py_compile "${py.replace(/\\/g, "/")}"`, { shell: "bash" });
-    ok("生成脚本 py_compile 过", true);
+    const pyFile = path.join(WORK, "gen.py");
+    fs.writeFileSync(pyFile, script, "utf-8");
+    if (py) {
+      TC.pyRun(["-m", "py_compile", pyFile]);
+      ok("生成脚本 py_compile 过", true);
+    } else {
+      TC.skip("生成脚本 py_compile", "未找到 python 3 解释器");
+    }
 
     // 2. 形态: step 定义带 ctx
     ok("def 带 ctx 参数", /def step_\w+\(sess, ctx=None,/.test(script), script.match(/def step_\w+\([^)]*\)/)?.[0]);
@@ -145,13 +168,14 @@ execSync("python - <<'EOF'\nimport time, urllib.request\nfor _ in range(50):\n  
       ok("JMX body 注入与 PY 注入同名变量", jmxApplied[1].body.includes('"${v_tok}"') && pyText.includes('ctx["v_tok"]'), jmxApplied[1].body);
     }
 
-    // 5. 真实执行(server 断言)
-    fs.writeFileSync(py, script.replace(/base_url="https:\/\/h\.com"/g, 'base_url="http://127.0.0.1:18999"'), "utf-8");
-    const drive = `
+    // 5. 真实执行(server 断言) —— 仅在有 python 时成立, 否则上面已记 SKIP
+    if (py) {
+      fs.writeFileSync(pyFile, script.replace(/base_url="https:\/\/h\.com"/g, 'base_url="http://127.0.0.1:18999"'), "utf-8");
+      const drive = `
 import json, re, urllib.parse
-src = open(${JSON.stringify(py.replace(/\\/g, "/"))}, encoding="utf-8").read()
+src = open(${JSON.stringify(pyFile.replace(/\\/g, "/"))}, encoding="utf-8").read()
 head = src[:src.index("def main():")]
-ns = {"__file__": ${JSON.stringify(py.replace(/\\/g, "/"))}}
+ns = {"__file__": ${JSON.stringify(pyFile.replace(/\\/g, "/"))}}
 exec(compile(head, "gen.py", "exec"), ns)
 import requests
 sess = requests.Session()
@@ -175,14 +199,15 @@ r5b = ns["step_save_va"](sess, {})
 assert r5b.json().get("ok") is False, "无 ctx 对照应保持录制原样(inner 未被动)"
 print("PYCHAIN-E2E-OK")
 `;
-    const driveFile = path.join(WORK, "drive.py");
-    fs.writeFileSync(driveFile, drive, "utf-8");
-    const out = execSync(`python -X utf8 "${driveFile.replace(/\\/g, "/")}"`, { shell: "bash", encoding: "utf-8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
-    ok("E2E: 提取+body/query/路径段/表单/值锚定/转义注入全过(server 断言)", out.includes("PYCHAIN-E2E-OK"), out.slice(-200));
+      const driveFile = path.join(WORK, "drive.py");
+      fs.writeFileSync(driveFile, drive, "utf-8");
+      const out = TC.pyRun(["-X", "utf8", driveFile], { timeout: 90000 });
+      ok("E2E: 提取+body/query/路径段/表单/值锚定/转义注入全过(server 断言)", out.includes("PYCHAIN-E2E-OK"), out.slice(-200));
+    }
   } finally {
-    srv.kill();
+    if (srv) { try { srv.kill(); } catch { /* */ } }
     fs.rmSync(WORK, { recursive: true, force: true });
   }
-  console.log(fails ? `=== FAIL ${fails} ===` : "=== PY 链注入 PASS ===");
+  console.log(fails ? `=== FAIL ${fails} ===` : `=== PY 链注入 PASS${TC.skipSummary()} ===`);
   process.exit(fails ? 1 : 0);
 })();

@@ -39,22 +39,34 @@ const sandbox = { console, setTimeout, clearTimeout, clearInterval() {}, URL, UR
 sandbox.window = sandbox; sandbox.globalThis = sandbox; vm.createContext(sandbox);
 for (const f of all) new vm.Script(fs.readFileSync(f, 'utf8'), { filename: f }).runInContext(sandbox);
 
+const TC = require(path.join(__dirname, "lib", "toolchain.js"));
+// 同步原语: 等条件成立(上限 3s), 不再用"睡 20ms 猜异步链跑完了"。
+// 全量套件并发跑时 chrome.storage stub 的 setTimeout(0) 回调链会超过固定睡眠 ——
+// 2026-11 走查实测 6 次跑出 5 次假红(断言逻辑没变, 只是渲染晚到)。
+const until = (pred, name) => TC.waitFor(pred, { timeout: 3000 }).then((hit) => {
+  if (!hit) console.log("  (等不到: " + name + ")");
+  return hit;
+});
+
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ' + msg); } else { fail++; console.log('  ✗ FAIL ' + msg); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
   await vm.runInContext('refresh()', sandbox);
-  await sleep(20);
+  await until(() => createdEls.some((e) => e.tag === 'li' && e.innerHTML.includes('还没有配置域名')), '空态指引');
   ok(createdEls.some((e) => e.tag === 'li' && e.innerHTML.includes('还没有配置域名')), '空态指引');
   const domainsNow = () => (storageData.get('toolbox.domains') || []);
+  const hostRendered = (h) => createdEls.filter((e) => e.tag === 'li')
+    .map((e) => e.innerHTML).join('|').includes('<span class="host">' + h);
 
   // 1) 添加 localhost —— 无点主机, 修复后应精确授权成功
   elements.get('input').value = 'localhost';
   lastRequest = null;
   vm.runInContext('addDomain()', sandbox);
-  await sleep(20);
+  await until(() => lastRequest && lastRequest[0] === 'https://localhost/*', 'localhost 授权申请');
   ok(lastRequest && lastRequest[0] === 'https://localhost/*', 'localhost 申请精确授权: ' + JSON.stringify(lastRequest));
+  await until(() => domainsNow().includes('localhost'), 'localhost 入列');
   ok(domainsNow().includes('localhost'), 'localhost 入列');
 
   // 2) 坏输入 → placeholder 提示(带空格的非法输入走第一道校验)
@@ -73,23 +85,25 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // 3) 覆盖提示: 配 example.com(顶级), 已有 sub.example.com → 显示覆盖
   elements.get('input').value = 'sub.example.com';
   vm.runInContext('addDomain()', sandbox);
-  await sleep(10);
+  await until(() => hostRendered('sub.example.com'), 'sub.example.com 渲染完成');
   elements.get('input').value = 'example.com';
   vm.runInContext('addDomain()', sandbox);
-  await sleep(20);
+  await until(() => hostRendered('example.com'), 'example.com 渲染完成');
   ok(domainsNow().join() === 'localhost,sub.example.com,example.com', '域名清单: ' + domainsNow().join());
-  const coversHtml = createdEls.filter((e) => e.tag === 'li').map((e) => e.innerHTML).join('|');
-  ok(coversHtml.includes('覆盖') && coversHtml.includes('sub.example.com'), '顶级域覆盖子域提示');
+  const lisHtml = () => createdEls.filter((e) => e.tag === 'li').map((e) => e.innerHTML).join('|');
+  await until(() => lisHtml().includes('覆盖') && lisHtml().includes('sub.example.com'), '覆盖标注渲染');
+  ok(lisHtml().includes('覆盖') && lisHtml().includes('sub.example.com'), '顶级域覆盖子域提示');
   // 3b. 多级父域也标注(v1.0.67, #161 方向①): 引擎 matchDomain 对任何父域配置都覆盖其
   //     子域(与段数无关)—— 原实现限"<=2 段"让 a.b.com/x.a.b.com 这类 3+ 段父域的冗余
   //     子域漏标(呈现层弱于引擎语义)。去掉段数限制后 endsWith 判定零误标。
   elements.get('input').value = 'x.a.b.com';
   vm.runInContext('addDomain()', sandbox);
-  await sleep(10);
+  await until(() => hostRendered('x.a.b.com'), 'x.a.b.com 渲染完成');
   elements.get('input').value = 'a.b.com';
   vm.runInContext('addDomain()', sandbox);
-  await sleep(20);
-  const coversHtml2 = createdEls.filter((e) => e.tag === 'li').map((e) => e.innerHTML).join('|');
+  await until(() => hostRendered('a.b.com'), 'a.b.com 渲染完成');
+  await until(() => lisHtml().includes('覆盖') && lisHtml().includes('x.a.b.com'), '3 段父域覆盖标注');
+  const coversHtml2 = lisHtml();
   ok(coversHtml2.includes('a.b.com') && coversHtml2.includes('覆盖') && coversHtml2.includes('x.a.b.com'),
     '3 段父域 a.b.com 也标覆盖 x.a.b.com(引擎同语义, v1.0.67)');
 
@@ -100,7 +114,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   //     分段语义注意: a.b.com 是 3 段 → 精确授权(非 *.a.b.com 通配)。
   lastRequest = null;
   await vm.runInContext('removeDomain("a.b.com")', sandbox);
-  await sleep(20);
+  await until(() => lastRemove !== null && !domainsNow().includes('a.b.com'), 'a.b.com 删除生效');
   ok(lastRemove && lastRemove.join() === 'https://a.b.com/*,http://a.b.com/*',
     '撤销的 origins 与申请对称(domainToOrigins 同款两协议): ' + JSON.stringify(lastRemove));
   ok(!granted.has('https://a.b.com/*'), 'a.b.com 授权已从 granted 集(权限面)移除');
@@ -109,7 +123,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // 呈现层: refresh 后最新批次渲染不含已删域名(createdEls 是只增不减记录桶, 断当前态取尾部批次)。
   // 注意 x.a.b.com 仍在清单(3b 加的), tailHtml 不能断言不含"b.com"整体 —— 精确断 a.b.com 独立 host span。
   await vm.runInContext('refresh()', sandbox);
-  await sleep(20);
+  await until(() => [...elements.values()].some((el) => el.textContent === '已授权' || el.textContent === '未授权'), '授权态文本写入');
   const tailLis = createdEls.filter((e) => e.tag === 'li').slice(-Math.max(1, domainsNow().length));
   const tailHtml = tailLis.map((e) => e.innerHTML).join('|');
   ok(!tailHtml.includes('<span class="host">a.b.com'), '已删域名不在最新渲染批次(host span 精确断)');
@@ -150,7 +164,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   elements.get('llmModel').value = 'm1';
   elements.get('llmKey').value = '';
   vm.runInContext('saveLlm()', sandbox);
-  await sleep(20);
+  await until(() => {
+    const v = storageData.get('toolbox.llm');
+    return v && v.model === 'm1' && elements.get('llmMsg').textContent === '已保存';
+  }, '空 URL 配置落库+提示');
   const llm1 = storageData.get('toolbox.llm');
   ok(llm1 && llm1.url === '' && llm1.model === 'm1', '空 URL 直接保存: ' + JSON.stringify(llm1));
   ok(elements.get('llmMsg').textContent === '已保存', '保存提示');
@@ -158,14 +175,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // 5b. 坏 URL → 拦截
   elements.get('llmUrl').value = 'ftp://x';
   vm.runInContext('saveLlm()', sandbox);
-  await sleep(10);
+  await until(() => elements.get('llmMsg').textContent.includes('不是合法'), '坏 URL 拦截提示');
   ok(elements.get('llmMsg').textContent.includes('不是合法'), '坏 URL 拦截: ' + elements.get('llmMsg').textContent);
 
   // 5c. 本地 URL 未授权 → request 发起 → 保存
   elements.get('llmUrl').value = 'http://127.0.0.1:8787/v1/chat/completions';
   lastRequest = null;
   vm.runInContext('saveLlm()', sandbox);
-  await sleep(20);
+  await until(() => lastRequest && lastRequest.includes('http://127.0.0.1/*') && (storageData.get('toolbox.llm') || {}).url && storageData.get('toolbox.llm').url.includes('8787'), '本地代理授权申请与落库');
   ok(lastRequest && lastRequest.includes('http://127.0.0.1/*'), '本地代理授权申请: ' + JSON.stringify(lastRequest));
   const llm2 = storageData.get('toolbox.llm');
   ok(llm2 && llm2.url.includes('8787'), 'LLM 配置已存: ' + llm2.url);
@@ -175,7 +192,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   //     request 依旧发起但用户无感 —— 断言改为"保存成功且配置落库"。
   lastRequest = null;
   vm.runInContext('saveLlm()', sandbox);
-  await sleep(20);
+  await until(() => lastRequest !== null && elements.get('llmMsg').textContent === '已保存', '已授权主机 request+提示');
   ok(lastRequest !== null, '已授权主机直接保存(request 幂等回调, 无弹窗)');
   ok(elements.get('llmMsg').textContent === '已保存', '再次保存提示');
 
@@ -189,7 +206,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   sandbox.__fetchUrl = null;
   vm.runInContext('globalThis.fetch = async (u, o) => { __fetchUrl = u; return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "收到" } }] }) }; }', sandbox);
   vm.runInContext('testLlm()', sandbox);
-  await sleep(30);
+  await until(() => vm.runInContext('__fetchUrl', sandbox) === 'http://new-host:9000/v1/chat/completions', '测试连接 fetch');
   ok(vm.runInContext('__fetchUrl', sandbox) === 'http://new-host:9000/v1/chat/completions',
     '测试连接用输入框当前 URL: ' + vm.runInContext('__fetchUrl', sandbox));
   ok(elements.get('llmMsg').textContent.includes('连通正常'), '测试成功提示: ' + elements.get('llmMsg').textContent);
@@ -197,14 +214,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   elements.get('llmUrl').value = 'http://unauth-host:9000/v1/chat/completions';
   vm.runInContext('globalThis.fetch = async (u) => { __fetchUrl = u; throw new Error("nf"); }', sandbox);
   vm.runInContext('__fetchUrl = null; testLlm()', sandbox);
-  await sleep(30);
+  await until(() => elements.get('llmMsg').textContent.includes('未授权'), '未授权指引');
   ok(vm.runInContext('__fetchUrl', sandbox) === null, '未授权主机不发起 fetch');
   ok(elements.get('llmMsg').textContent.includes('未授权'), '未授权指引: ' + elements.get('llmMsg').textContent);
   // 5g. 空 URL 测试 → 提示填写
   elements.get('llmUrl').value = '';
   vm.runInContext('testLlm()', sandbox);
-  await sleep(10);
+  await until(() => elements.get('llmMsg').textContent.includes('请先填写'), '空 URL 提示');
   ok(elements.get('llmMsg').textContent.includes('请先填写'), '空 URL 测试提示: ' + elements.get('llmMsg').textContent);
+
+  // 6) 并发添加两个域名必须都落库(v1.1.5): 权限回调与 storage 回调都是异步的, 同一 tick
+  //    发起两次添加时, 后写入若用闭包里的旧清单就会覆盖前者(实测 sub.example.com +
+  //    example.com 只剩后者)。修复 = 改清单入口统一过 domainQueue 串行锁 + 锁内以存储为准。
+  {
+    elements.get('input').value = 'race-a.test.com';
+    vm.runInContext('addDomain()', sandbox);
+    elements.get('input').value = 'race-b.test.com';
+    vm.runInContext('addDomain()', sandbox);
+    await until(() => domainsNow().includes('race-a.test.com') && domainsNow().includes('race-b.test.com'), '并发添加都落库');
+    const after = domainsNow();
+    ok(after.includes('race-a.test.com') && after.includes('race-b.test.com'),
+      '并发添加两个域名都落库(串行锁 + 存储为准): ' + JSON.stringify(after));
+    ok(after.includes('localhost'), '并发添加不吞既有域名: ' + JSON.stringify(after));
+  }
 
   console.log(fail ? `\n=== options 页走查 FAIL: ${fail} ===` : `\n=== options 页走查 PASS ===`);
   process.exit(fail ? 1 : 0);

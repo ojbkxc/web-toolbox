@@ -363,6 +363,19 @@ function harQueryString(q) {
 // 已录数据, 填进 entries.time 与 timings.wait(HAR 语义: -1 = N/A, 未知字段不猜)。
 // startedDateTime: ts 缺失(旧数据/极端)时给空串而非 undefined —— undefined 经 JSON.stringify
 // 会整键消失, HAR 校验器按"缺 required"拒收。
+// HAR content.size 的口径: **UTF-8 字节数**(不是 JS 字符数)。中文 1 字符=3 字节,
+// Chrome DevTools/其它 HAR 消费方按 size 汇总传输量, 用 .length 会低报。
+function harByteSize(text) {
+  const s = String(text || "");
+  if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(s).length;
+  try { return Buffer.byteLength(s, "utf8"); } catch { return s.length; }
+}
+
+// 注意两处**有意留空**, 不是漏写:
+//   · response.headers 恒为 []: 录制引擎只存请求头(CDP requestWillBeSent 的 headers),
+//     响应头从未入库 —— 伪造一份空但看起来"完整"的头比留空更坏, 所以保持空数组;
+//   · 二进制/Base64 响应在录制时已被替换成占位文本 "(binary/base64 略)", HAR 里也是这段文本,
+//     不额外标 content.encoding=base64(那会让消费方把占位文本当 base64 解)。
 function buildHar(entries) {
   return {
     log: {
@@ -387,7 +400,7 @@ function buildHar(entries) {
             httpVersion: "HTTP/1.1",
             headers: [],
             cookies: [],
-            content: { text: e.response || "", mimeType: e.mime || "" },
+            content: { text: e.response || "", mimeType: e.mime || "", size: harByteSize(e.response) },
             redirectURL: "",
             headersSize: -1,
             bodySize: -1,

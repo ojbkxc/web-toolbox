@@ -30,7 +30,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const VERSION = "0.1.0";
-const opts = parseArgs(process.argv.slice(2));
+let opts;
+try {
+  opts = parseArgs(process.argv.slice(2));
+} catch (e) {
+  process.stderr.write("[web-toolbox-bridge] 参数错误: " + (e && e.message ? e.message : e) + "\n");
+  process.exit(2);
+}
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function log(...args) {
@@ -52,6 +58,7 @@ if (opts.help) {
   --token-file <path>   令牌文件路径
   --allow-control       启用控制类工具(点击/输入/导航/录制)
   --archive-dir <path>  抓包归档目录(默认 ~/.web-toolbox/archive)
+  --archive-keep-days <n> 归档保留天数(0=永不清理, 默认 0)
   --quiet               不输出日志
 
 典型用法: 先起 daemon, 再让 AI 客户端连。
@@ -69,8 +76,11 @@ if (source === "generated") {
 // ============================================================ daemon 模式
 // 只开 WS, 保持进程常驻, 不接 MCP。
 async function runDaemon() {
-  const archive = new Archive(opts.archiveDir);
+  const archive = new Archive(opts.archiveDir, { keepDays: opts.archiveKeepDays });
   if (!(await archive.init())) log(`归档目录不可写, 归档关闭: ${opts.archiveDir}`);
+  else if (archive.keepDays > 0 && archive.pruned && archive.pruned.removed.length) {
+    log(`归档清理: 删除 ${archive.pruned.removed.length} 个超过 ${archive.keepDays} 天的日归档`);
+  }
 
   const hub = new Hub({
     host: opts.host, port: opts.port, token,
@@ -164,6 +174,7 @@ async function spawnDaemon() {
     "--port", String(opts.port),
     "--token-file", opts.tokenPath,
     "--archive-dir", opts.archiveDir,
+    ...(opts.archiveKeepDays ? ["--archive-keep-days", String(opts.archiveKeepDays)] : []),
     ...(opts.allowControl ? ["--allow-control"] : []),
   ], { detached: true, stdio: "ignore", windowsHide: true });
   child.unref();
@@ -182,7 +193,9 @@ async function createProxyHub(WS) {
   //   connected  = 代理连上了 daemon(自己活着)
   //   extOnline  = daemon 那边有扩展在线(真正能干活)
   // 工具层的 connected 判定必须用 extOnline, 否则扩展没开时 bridge_status 会误报已连接。
-  const state = { ws: null, pending: new Map(), extInfo: null, connected: false, extOnline: false };
+  // daemonAllowControl: daemon 侧真正的开关。本地进程的 --allow-control 只在"自己起 WS"时有效;
+  // 代理模式下闸门由 daemon 判 —— 两个值不一致时, 控制类调用会被 daemon 以 forbidden 打回。
+  const state = { ws: null, pending: new Map(), extInfo: null, connected: false, extOnline: false, daemonAllowControl: null };
   let reconnectTimer = null;
 
   function connect() {
@@ -207,6 +220,7 @@ async function createProxyHub(WS) {
           state.connected = true;
           state.extInfo = f.bridge || {};
           state.extOnline = !!(f.bridge && f.bridge.extensionOnline);
+          state.daemonAllowControl = !!(f.bridge && f.bridge.allowControl);
           settle(true);
           return;
         }
@@ -247,6 +261,8 @@ async function createProxyHub(WS) {
     get connected() { return state.connected && state.extOnline; },
     get daemonConnected() { return state.connected; },
     get extInfo() { return state.extInfo; },
+    // 单进程模式下没有 daemon, 本地开关就是最终开关。
+    get daemonAllowControl() { return state.daemonAllowControl; },
     // 代理层不做白名单判定 —— daemon 侧(真正的 Hub)会判。这里只转发。
     request(method, params = {}, { timeoutMs = 30000 } = {}) {
       if (!state.connected) {

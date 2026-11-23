@@ -84,6 +84,9 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ' + msg); } el
   ok(harEntries.some((e) => e.request.method === 'OPTIONS'), 'HAR 含 OPTIONS(保真)');
   // HAR 1.2 spec required 字段: 校验器按"缺 required"拒收, undefined 经 stringify 整键消失
   ok(harObj.version === '1.2', 'HAR log.version 1.2');
+  // log.creator 是 spec 必填: 缺了 HAR 校验器会拒收(而不是"没有作者信息"这么轻)
+  ok(harObj.creator && typeof harObj.creator.name === 'string' && typeof harObj.creator.version === 'string',
+    'HAR log.creator(name/version) 齐: ' + JSON.stringify(harObj.creator));
   for (const e of harEntries) {
     const req = ['method', 'url', 'httpVersion', 'headers', 'queryString', 'cookies', 'headersSize', 'bodySize'];
     const resp = ['status', 'statusText', 'httpVersion', 'headers', 'cookies', 'content', 'redirectURL', 'headersSize', 'bodySize'];
@@ -92,6 +95,12 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ' + msg); } el
     ok(req.every((k) => k in e.request), `request required 齐(缺: ${req.filter((k) => !(k in e.request))})`);
     ok(resp.every((k) => k in e.response), `response required 齐(缺: ${resp.filter((k) => !(k in e.response))})`);
     ok(['send', 'wait', 'receive'].every((k) => k in e.timings), 'timings send/wait/receive 齐');
+    // content 也是 spec 必填面: size(整数, UTF-8 字节) / mimeType(字符串)。
+    // 早期这条清单漏了 content.size —— buildHar 少写它时整轮回归仍是绿的, 直到 R29 才补。
+    ok(e.response.content && typeof e.response.content.size === 'number',
+      'content.size 存在且为数字(缺则消费方按 0 汇总): ' + JSON.stringify(e.response.content));
+    ok(typeof e.response.content.mimeType === 'string', 'content.mimeType 是字符串');
+    ok(typeof e.cache === 'object' && e.cache !== null, 'cache 是对象');
     break; // 结构同构, 验首条即可
   }
   // durationMs 缺失 → time/wait = -1(HAR 语义 N/A); 有 durationMs → 原值

@@ -10,6 +10,17 @@ const $llmMsg = document.getElementById("llmMsg");
 
 let domains = [];
 
+// 域名清单的读-改-写必须串行(v1.1.5): 权限回调与 chrome.storage 回调都是异步的,
+// 两次改动并发时后来者会用陈旧清单覆盖前者 —— 实测 options 页快速添加
+// sub.example.com + example.com 只剩后者(第一次写入被吞), 删除/编辑同理。
+// 锁内一律以存储为准重建清单, 不信闭包里的 domains; 一次失败不让后续操作卡死。
+let domainQueue = Promise.resolve();
+function withDomainLock(fn) {
+  const run = domainQueue.then(fn, fn);
+  domainQueue = run.then(() => {}, () => {});
+  return run;
+}
+
 // ---------- 域名 ----------
 async function refresh() {
   domains = await getDomains();
@@ -81,18 +92,24 @@ function addDomain() {
   }
   chrome.permissions.request({ origins: domainToOrigins(host) }, (granted) => {
     if (!granted) return;
-    (async () => {
-      domains = await setDomains([...domains, host]);
+    withDomainLock(async () => {
+      const cur = await getDomains(); // 存储为准: 回调期间可能有另一次添加/删除
+      domains = await setDomains([...new Set([...cur, host])]);
       $input.value = "";
       refresh();
-    })();
+    }).catch((e) => {
+      $input.placeholder = "添加失败: " + ((e && e.message) || e);
+    });
   });
 }
 
 async function removeDomain(d) {
-  await removeOrigins(domainToOrigins(d));
-  domains = await setDomains(domains.filter((x) => x !== d));
-  refresh();
+  return withDomainLock(async () => {
+    await removeOrigins(domainToOrigins(d));
+    const cur = await getDomains(); // 存储为准: 不覆盖并发添加
+    domains = await setDomains(cur.filter((x) => x !== d));
+    refresh();
+  });
 }
 
 // 行内编辑: 旧配置替换成新域名。
@@ -144,13 +161,15 @@ function editDomain(d) {
     chrome.permissions.request({ origins: domainToOrigins(host) }, (granted) => {
       if (!granted) { setMsg("未授权新域名, 保持原配置", "err"); return restore(); }
       // 走到这里授权已生效
-      (async () => {
-        const idx = domains.indexOf(d);
-        domains = await setDomains(domains.map((x, i) => (i === idx ? host : x)));
+      withDomainLock(async () => {
+        const cur = await getDomains(); // 存储为准: 并发添加不被这次替换吞掉
+        domains = await setDomains(cur.map((x) => (x === d ? host : x)));
         await removeOrigins(domainToOrigins(d)); // 再撤旧授权(清单已更新, 撤失败不影响功能)
         setMsg(`已改为 ${host}`, "ok");
         refresh();
-      })();
+      }).catch((e) => {
+        setMsg("保存失败: " + ((e && e.message) || e), "err");
+      });
     });
   };
   const onCancel = () => restore();

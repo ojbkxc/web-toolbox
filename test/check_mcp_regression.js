@@ -17,15 +17,23 @@ const bcSrc = fs.readFileSync(path.join(ROOT, "bridge-client.js"), "utf8");
 const bgSrc = fs.readFileSync(path.join(ROOT, "background.js"), "utf8");
 
 // ---------- 工具注册 ----------
-assert(/registerTool\("chain_replay"/.test(toolsSrc), "d1. chain_replay 工具已注册");
-assert(/registerTool\("console_read"/.test(toolsSrc), "d2. console_read 工具已注册");
-assert(/registerTool\("console_clear"/.test(toolsSrc), "d3. console_clear 工具已注册");
+assert(/register(?:Tool)?\("chain_replay"/.test(toolsSrc), "d1. chain_replay 工具已注册");
+assert(/register(?:Tool)?\("console_read"/.test(toolsSrc), "d2. console_read 工具已注册");
+assert(/register(?:Tool)?\("console_clear"/.test(toolsSrc), "d3. console_clear 工具已注册");
 
 // ---------- 控制守卫 ----------
 assert(/controlGuard\("chain\.replay"\)/.test(toolsSrc), "d4. chain_replay 走控制守卫");
 assert(/controlGuard\("console\.clear"\)/.test(toolsSrc), "d5. console_clear 走控制守卫");
 // console_read 是只读, 不应走 controlGuard(否则未开 --allow-control 时读不到日志)
-const readBlock = toolsSrc.slice(toolsSrc.indexOf('registerTool("console_read"'), toolsSrc.indexOf('registerTool("console_clear"'));
+// 注册点定位兼容两种形态(v1.1.6 起统一走 register 包装)
+const regAt = (name) => {
+  for (const form of [`registerTool("${name}"`, `register("${name}"`]) {
+    const i = toolsSrc.indexOf(form);
+    if (i >= 0) return i;
+  }
+  return -1;
+};
+const readBlock = toolsSrc.slice(regAt("console_read"), regAt("console_clear"));
 assert(!/controlGuard/.test(readBlock), "d6. console_read 不要求管理权限(只读)");
 
 // ---------- 协议方法表与实现一致 ----------

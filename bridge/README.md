@@ -88,28 +88,64 @@ claude mcp add web-toolbox -s user -- node D:/GitHub/web-toolbox/bridge/src/inde
 
 ## 工具一览
 
-| 工具 | 说明 | 需要 `--allow-control` |
-|---|---|---|
-| `bridge_status` | 扩展是否已连接、录制状态 | |
-| `net_list` | 列出抓到的请求（摘要，可过滤/分页） | |
-| `net_get` | 按 id 取完整请求+响应正文 | |
-| `net_hosts` | 抓包域名分布（诊断漏录） | |
-| `export_har` | 导出 HAR 1.2 | |
-| `export_jmx` | 导出 JMeter 脚本 | |
-| `export_python` | 导出 requests 重放脚本 | |
-| `correlate` | 自动关联动态值 | |
-| `tab_list` | 列出标签页 | |
-| `rec_start` / `rec_stop` | 开始/停止录制 | ✓ |
-| `tab_navigate` | 打开网址 | ✓ |
-| `tab_activate` / `tab_close` | 切换 / 关闭标签页 | ✓ |
-| `page_snapshot` | 页面结构快照（带 ref，穿透 shadow DOM 与同源 iframe） | ✓ |
-| `page_click` / `page_type` / `page_press` | 按 ref 交互 | ✓ |
-| `page_hover` | 悬停（展开二级菜单必需） | ✓ |
-| `page_select` | 原生下拉框选择 | ✓ |
-| `page_scroll` | 滚到元素 / 按像素 / 到底部（懒加载） | ✓ |
-| `page_wait` | 等元素/文本/URL/毫秒（比 sleep 可靠） | ✓ |
-| `page_screenshot` | 截图（返回 PNG） | ✓ |
-| `page_eval` | 页面执行 JS（只读调试用） | ✓ |
+| 工具 | 说明 | 需要 `--allow-control` | 结构化返回 |
+|---|---|---|---|
+| `bridge_status` | 扩展是否已连接、录制状态 | | ✓ |
+| `net_list` | 列出抓到的请求（摘要，可过滤/分页） | | ✓ |
+| `net_get` | 按 id 取完整请求+响应正文（结构化 `truncated`/`originalChars`/`maxBody`，不用再猜是否被截断） | | ✓ |
+| `net_hosts` | 抓包域名分布（诊断漏录） | | ✓ |
+| `export_har` | 导出 HAR 1.2 | | |
+| `export_jmx` | 导出 JMeter 脚本 | | |
+| `export_python` | 导出 requests 重放脚本 | | |
+| `correlate` | 自动关联动态值 | | ✓ |
+| `tab_list` | 列出标签页 | | |
+| `rec_start` / `rec_stop` | 开始/停止录制 | ✓ | |
+| `tab_navigate` | 打开网址 | ✓ | |
+| `tab_activate` / `tab_close` | 切换 / 关闭标签页 | ✓ | |
+| `page_snapshot` | 页面结构快照（带 ref，穿透 shadow DOM 与同源 iframe） | ✓ | |
+| `page_click` / `page_type` / `page_press` | 按 ref 交互 | ✓ | |
+| `page_hover` | 悬停（展开二级菜单必需） | ✓ | |
+| `page_select` | 原生下拉框选择 | ✓ | |
+| `page_scroll` | 滚到元素 / 按像素 / 到底部（懒加载） | ✓ | |
+| `page_wait` | 等元素/文本/URL/毫秒（比 sleep 可靠） | ✓ | |
+| `page_screenshot` | 截图（返回 PNG） | ✓ | |
+| `page_eval` | 页面执行 JS（只读调试用） | ✓ | |
+| `chain_replay` | 链路重放 + 回归 diff（逐条 OK/DIFF/FAIL/ERR） | ✓ | |
+| `console_read` | 读控制台日志（环形缓冲，最多 500 条） | | |
+| `console_clear` | 清空控制台日志缓冲（不动已录请求） | ✓ | |
+
+**结构化自校验(v1.1.15)**: 带 `outputSchema` 的工具返回前先用 zod 自己验一遍
+`structuredContent` —— 不符时返回 `错误[bad_payload]: 工具 xxx 的 structuredContent 与 outputSchema 不符: 字段: 原因`
+(而不是让 SDK 抛一句难读的协议错误), 顺带在开发期暴露 schema 与返回值漂移。
+
+**等号写法(v1.1.30)**: 带值参数支持 `--port=9280` / `--token=abc==` 形式(只在已知
+带值 flag 的第一个 `=` 处切, 值里允许再出现 `=`); 未知的 `--foo=bar` 仍报未知参数。
+
+**参数校验(v1.1.14)**: `--port` 必须是 1..65535 的整数、flag 漏值/吞掉下一个 flag、
+未知参数(如把 `--allow-control` 拼成 `--alow-control`)**一律在启动前报错退出(码 2)**并举出可用参数 ——
+早先这些情况要么 NaN 崩在 WebSocketServer 里, 要么被静默忽略(控制类悄悄不可用)。
+
+**控制开关一致性(v1.1.26)**: 本地进程的 `--allow-control` 与 daemon 的开关是**两个**值。
+代理模式下真正的闸门在 daemon —— 本地开了、daemon 没开时, 控制类工具会在 daemon 那侧被拒。
+`bridge_status` 现在回 `allowControl`(本地) / `daemonAllowControl`(daemon, 单进程为 null) /
+`controlMismatch`, 不再让用户对着 `forbidden` 猜该重启谁。
+
+**工具表闸门(v1.1.13)**: 上面这张表由 `test/check_tool_table.js` 盯着 ——
+工具漏登记、登记了没实现、"需要 --allow-control"列与实现不符, 都会直接红。
+
+**参数描述(v1.1.12)**: 27 个工具的每个输入参数都有 `.describe()` —— 客户端会把描述
+喂给模型, 没描述的参数等于让模型猜。`test/check_bridge_schema.js` 是闸门(漏一个就红)。
+
+**字节口径(v1.1.10)**: `net_list` 的 `reqBytes`/`respBytes` 是 **UTF-8 字节数**
+(`TextEncoder` 计), 不是 JS 字符串长度 —— 中文/emoji 每字符 3-4 字节, 旧实现用 `.length`
+会低报 2-3 倍, 客户端按它算上下文预算会漏。smoke 用 `"你好"`(2 字符 6 字节) 钉住这条。
+
+**工具注解(v1.1.6)**: 每个工具都带 MCP `annotations` —— `readOnlyHint` 区分只读与写入,
+破坏性工具(page_click / page_type / page_select / page_eval / chain_replay / console_clear /
+tab_close)另标 `destructiveHint`。客户端可据此对只读工具免确认、对破坏性工具二次确认,
+不必靠读描述猜。注解表在 `src/tools.js` 的 `ANNOTATIONS`, 漏声明在注册时直接抛错;
+`test/check_bridge_annotations.js` 钉住"注解 ↔ 注册集 ↔ 协议白名单"三方一致,
+`npm run smoke` 的 `tools/list` 再验一次协议层可见性。
 
 **用 ref 不用坐标**：`page_snapshot` 给可交互元素打 `data-ai-ref="eN"`，后续按 ref 操作。
 坐标对 LLM 不可靠（截图像素 vs CSS 像素、滚动失效），元素引用才是模型擅长的表达。
@@ -145,6 +181,43 @@ claude mcp add web-toolbox -s user -- node D:/GitHub/web-toolbox/bridge/src/inde
   `test/check_bridge.js` 断言扩展 `bridgeDispatch` 的分支与白名单严格一一对应。
 - **录制不变量**：桥接层只读 `toolbox.harvest`，永不写。测试里钉死。
 
+## 错误语义(客户端可机读)
+
+工具失败一律返回 `isError: true` + 两行文本:
+
+```
+错误[no_entries]: 过滤后没有条目
+下一步: 先用 net_list 看当前抓到什么; 空的话确认已开始录制且域名已授权
+```
+
+错误码分两类: 线协议码(`not_connected` / `forbidden` / `timeout` / `ext_error` …)与业务码
+(`bad_args` / `no_entries` / `bad_payload` / `bad_state`)。文案与"下一步"的**唯一来源**是
+`src/errors.js`; `test/check_bridge_errors.js` 钉住"码表 ↔ 线协议码 ↔ 工具层调用"三方一致。
+
+## 归档保留期(可选)
+
+抓包归档按天一个 `harvest-YYYY-MM-DD.jsonl`, 默认**永不清理**(删数据是不可逆动作)。
+
+```bash
+node src/index.js --daemon --archive-keep-days 30   # 启动时删掉 30 天前的日归档
+```
+
+- 只认 `harvest-YYYY-MM-DD.jsonl` 这个名字, 同目录其它文件(含非法命名)一律不碰;
+- 范围校验 0..3650, `0` = 不清理(默认); 值非法时启动前报错退出(码 2), 不会先删再报错;
+- 清理发生在 daemon 启动、尚未接受请求之前; 删除数量会打在启动日志里。
+
+## 排障顺序(先 doctor, 再猜)
+
+```bash
+node src/doctor.js      # 18 项逐条 PASS/FAIL, 每条带"下一步"
+```
+
+- `依赖可加载` FAIL → 在 `bridge/` 里 `npm install`(扩展本体仍是零依赖, 这层独立)
+- `daemon 端口在监听` FAIL → 常驻 daemon 没起: `node src/index.js --daemon --allow-control`
+- `令牌可用` FAIL → 先起一次 daemon 让它生成 `~/.web-toolbox/bridge-token`
+- `令牌被 daemon 接受` FAIL → 手里这串和 daemon 内存里的不一致(轮换过/填错), 换成它打印的那串或重启 daemon
+- 全 PASS 但 AI 侧仍连不上 → 核对扩展配置页「AI 桥接」的地址/令牌是否与 doctor 打印一致
+
 ## 已知约束
 
 - **`chrome.debugger` 单会话**：录制和页面控制都要 attach 同一个 tab。bridge 用
@@ -156,6 +229,10 @@ claude mcp add web-toolbox -s user -- node D:/GitHub/web-toolbox/bridge/src/inde
 ## 自检
 
 ```bash
-node bridge/smoke.mjs    # 端到端: 鉴权/请求响应/事件/控制开关/未连接, 14 项
+node bridge/smoke.mjs    # 端到端: 鉴权/请求响应/事件/控制开关/未连接/工具注解/错误语义/结构化返回/字节口径/分页边界/正文截断/开关不一致, 49 项(任意 cwd 都可跑)
+node bridge/unit.mjs     # 内部单测: register 自校验/config 参数守卫(--flag=value)/hub 拒绝分支/代理转发/断线失败/archive 落盘+权限+保留期清理/net_list 3000 条规模, 62 项(需 npm install)
+node bridge/test-exporters.mjs  # 导出口径单测 + 单源证明 + 清洗降级 + 异常形态(HEAD/空 body/204/超长 query/PATCH/OPTIONS/multipart/HAR size), 46 项
+cd bridge && npm test    # 聚合: unit(51) → exporters(29) → smoke(43), 任一层红即退出非零
+node src/doctor.js          # 自检: 监听地址/node 版本/依赖/协议契约/令牌/daemon 端口/归档目录/令牌权限/扩展就位/活体握手/协议/版本一致性, 18 项
 node test/check_bridge.js   # 契约走查: 协议一致性/白名单对应/录制不变量, 归入全量回归
 ```
