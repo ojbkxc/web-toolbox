@@ -71,6 +71,36 @@ const ok = (name, cond, got) => {
     .filter((c) => !/^LOCAL\.[A-Z_]+$/.test(c) && !/^ERR\./.test(c) && !/^[a-z_.]+$/.test(c));
   ok("所有 fail() 首参都是码", badCalls.length === 0, badCalls);
 
+
+// ---- hint 可执行性(v1.1.74) ----
+// AGENTS 要求错误消息带"下一步"。"恰好可执行"的判据: 给出具体入口(字段名/命令/参数),
+// 而不是"请更新到同一版本"这种用户无从下手的说法。
+{
+  const errSrc = fs.readFileSync(path.join(ROOT, "bridge", "src", "errors.js"), "utf8");
+  const needAction = {
+    UNKNOWN_METHOD: /bridge_status/,
+    PROTOCOL_MISMATCH: /bridge_status/,
+    EEXT: /page_snapshot|frame/,
+  };
+  for (const [code, re] of Object.entries(needAction)) {
+    const seg = errSrc.slice(errSrc.indexOf("[ERR." + code + "]"));
+    const body = seg.slice(0, seg.indexOf("},") + 1);
+    ok(`hint 可执行: ${code} 给出具体入口`, re.test(body), body.slice(0, 120));
+  }
+}
+
+// ---- bridge_status 并列返回两端版本(v1.1.74) ----
+{
+  const tSrc = fs.readFileSync(path.join(ROOT, "bridge", "src", "tools.js"), "utf8");
+  // 按"到下一个 register"截取整个工具块 —— 用 indexOf("}));") 会提前落在嵌套里。
+  const start = tSrc.indexOf('register("bridge_status"');
+  const nextReg = tSrc.indexOf('register(', start + 10);
+  const body = tSrc.slice(start, nextReg > 0 ? nextReg : undefined);
+  ok("bridge_status 返回 bridge.version/protocol(可对比两端版本)",
+    /bridge:\s*\{[^}]*version:/.test(body) && /protocol:/.test(body), body.slice(0, 160));
+  ok("bridge_status 的 outputSchema 声明了 bridge 字段", /bridge:\s*z\.record/.test(body), "缺 outputSchema 声明");
+}
+
   console.log(fail.length ? `=== bridge errors FAIL: ${fail.length} ===` : "=== bridge errors PASS ===");
   process.exit(fail.length ? 1 : 0);
 })();

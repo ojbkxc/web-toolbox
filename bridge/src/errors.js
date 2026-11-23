@@ -33,7 +33,8 @@ export const ERROR_HINTS = {
   },
   [ERR.UNKNOWN_METHOD]: {
     text: "bridge 不认识这个方法",
-    hint: "扩展与 bridge 版本不一致, 两端更新到同一版本后重试",
+    hint: "扩展与 bridge 版本不一致: 调 bridge_status 对比 extension.version 与 bridge.version,"
+      + " 更新两者到同一版本(扩展: 重新加载本目录; bridge: git pull 后重启进程)",
   },
   [ERR.UNAUTHORIZED]: {
     text: "令牌校验失败",
@@ -41,11 +42,13 @@ export const ERROR_HINTS = {
   },
   [ERR.PROTOCOL_MISMATCH]: {
     text: "协议版本不一致",
-    hint: "扩展与 bridge 来自不同版本, 更新到同一版本后重连",
+    hint: "扩展与 bridge 的协议版本不同: 调 bridge_status 看 extension.protocol 与 bridge.protocol,"
+      + " 两者必须相同; 不同则扩展在 chrome://extensions 重新加载、bridge 重启",
   },
   [ERR.EEXT]: {
     text: "扩展侧执行失败",
-    hint: "看错误详情里的原因; 页面已关闭/跨域受限时先在 Chrome 里确认页面状态",
+    hint: "看错误详情里的原因; 若是页面已关闭/换了 tab, 先 page_snapshot 确认元素还在;"
+      + " 跨域 iframe 内的元素需先切到该 frame(桥接只处理主 frame 与同源子 frame)",
   },
   [ERR.BAD_FRAME]: {
     text: "收到无法解析的协议帧",

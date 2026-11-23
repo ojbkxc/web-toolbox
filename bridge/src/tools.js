@@ -10,6 +10,17 @@ import { z } from "zod";
 import protocol from "../../bridge-protocol.js";
 import * as exporters from "./exporters.js";
 import { ERROR_HINTS, LOCAL, toolFail, fromException } from "./errors.js";
+import fsx from "node:fs";
+
+// 两端版本常量: 供 bridge_status 并列返回(版本错位是"连上了但方法不认"的最高频根因,
+// errors.js 的 UNKNOWN_METHOD/PROTOCOL_MISMATCH hint 直接指向这两个字段)。
+const PROTOCOL_VERSION = protocol.PROTOCOL_VERSION;
+const BRIDGE_VERSION = (() => {
+  try {
+    const pkg = JSON.parse(fsx.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    return pkg.version || "unknown";
+  } catch { return "unknown"; }
+})();
 
 const { isControlMethod } = protocol;
 
@@ -227,6 +238,7 @@ export function registerTools(server, hub, ctx) {
     inputSchema: {},
     outputSchema: {
       connected: z.boolean(),
+      bridge: z.record(z.string(), z.any()).optional(),
       extension: z.record(z.string(), z.any()).optional(),
       allowControl: z.boolean().optional(),
       daemonAllowControl: z.boolean().nullable().optional(),
@@ -244,6 +256,9 @@ export function registerTools(server, hub, ctx) {
     const mismatch = typeof daemonAllow === "boolean" && daemonAllow !== ctx.allowControl;
     return structured({
       connected: true,
+      // 两端版本并列返回: 版本错位是最高频的"连上了但方法不认"根因, 不给对比入口用户只能猜
+      // (errors.js 的 UNKNOWN_METHOD / PROTOCOL_MISMATCH hint 直接指向这两个字段)。
+      bridge: { version: BRIDGE_VERSION, protocol: PROTOCOL_VERSION },
       extension: hub.extInfo || undefined,
       allowControl: ctx.allowControl,
       daemonAllowControl: typeof daemonAllow === "boolean" ? daemonAllow : null,
