@@ -10,7 +10,7 @@
 零业务逻辑、只产出数据；目标域名完全可配置（`optional_host_permissions`，不配域名对任何站点无权工作）。
 
 - **仓库**：https://github.com/ojbkxc/web-toolbox（main 分支，直接 push，不走 PR）
-- **形态**：`manifest.json` v3，版本号在 manifest `"version"`（当前 1.1.81）
+- **形态**：`manifest.json` v3，版本号在 manifest `"version"`（当前 1.1.83）
 - **入口文件**：
   - `background.js` — service worker，录制引擎（chrome.debugger attach/网络事件/环形诊断日志）
   - `sidepanel/` — 工作台（查看/过滤/重放/关联/导出/AI 全在侧栏）

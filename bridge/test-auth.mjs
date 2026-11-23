@@ -55,9 +55,19 @@ function connect({ token = TOKEN, protocol: proto = PROTOCOL_VERSION, ua } = {})
 }
 
 async function waitDaemonUp() {
-  for (let i = 0; i < 30; i++) {
+  // 只探 TCP 端口: 本文件专测"令牌错/协议错"场景, 就绪判定不能预设握手会成功
+  // (用完整 WS 握手时, 并发下握手慢会超时 → 被误当"daemon 没起"→ 假红)。
+  const net = await import("node:net");
+  for (let i = 0; i < 60; i++) {
+    const up = await new Promise((resolve) => {
+      const sock = net.connect({ host: "127.0.0.1", port: PORT });
+      const done = (v) => { sock.destroy(); resolve(v); };
+      sock.on("connect", () => done(true));
+      sock.on("error", () => done(false));
+      setTimeout(() => done(false), 300);
+    });
+    if (up) return true;
     await sleep(150);
-    try { const c = await connect(); c.ws.close(); return true; } catch { /* 未起 */ }
   }
   return false;
 }

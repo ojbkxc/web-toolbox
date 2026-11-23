@@ -60,7 +60,28 @@ ok(`没有注释掉的断言调用(${testFiles.length} 个测试文件已扫)`, 
 ok("没有框架级跳过(.skip/.todo/xit/xdescribe)", skipped.length === 0, skipped);
 ok("process.exit(0) 只在文件末尾", earlyExit.length === 0, earlyExit);
 
-// ---------- D: git add -A ----------
+// ---------- C2: 就绪判定不得依赖 WS 协议层 ----------
+// 实证两次(R92 doctor / R95 test-auth): 用完整 WS 握手判"daemon 就绪", 在本文件专测
+// "令牌错/协议错"的场景下必然误判, 且并发时握手慢会超时 → 假红。就绪 = 端口在监听。
+{
+  const bad = [];
+  for (const rel of ["bridge/test-doctor.mjs", "bridge/test-auth.mjs", "bridge/smoke.mjs"]) {
+    const p = path.join(ROOT, rel);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, "utf8");
+    // 只看 waitDaemonUp 自己的函数体(到下一个 function/async function 为止) ——
+    // 用"文件里有没有 net.connect"判会放过于事无补: 改回握手时 TCP 代码仍可能在别处。
+    const at = src.indexOf("async function waitDaemonUp");
+    const rest = src.slice(at + 30);
+    const nextFn = rest.search(/\n(async )?function /);
+    const body = nextFn > 0 ? rest.slice(0, nextFn) : rest.slice(0, 1200);
+    const usesWsHandshake = /await connect\(/.test(body);
+    if (usesWsHandshake) bad.push(rel + "(waitDaemonUp 里用 WS 握手判就绪)");
+  }
+  ok("就绪判定走 TCP 端口探测(不依赖 WS 握手)", bad.length === 0, bad);
+}
+
+// ---------- D:// ---------- D: git add -A ----------
 const docs = [];
 (function walk(d) {
   for (const ent of fs.readdirSync(d, { withFileTypes: true })) {

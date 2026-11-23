@@ -1,5 +1,30 @@
 # 更新记录
 
+## v1.1.83 — test-auth 就绪判定同款缺陷(并发假红)
+
+- **实测**: 全量套件连跑 3 次, 第 3 次 `bridge-auth` 红在"版本不符 → protocol_mismatch";
+  单独重跑 5 次全绿 —— 典型的并发时序假红。
+- **根因与 R92 完全相同**: `test-auth` 的 `waitDaemonUp` 用**完整 WS 握手**(4s 超时)判就绪,
+  而这个文件专测"令牌错/协议错" —— 就绪判定预设了握手会成功; 并发下握手慢就超时, 被当成
+  "daemon 没起", 进而让协议 case 断言失败。
+- **修**: 改为 TCP 端口探测(只看"端口在监听"); 3 次单跑 + 4 次全量连跑均绿。
+- **把经验做成闸门**: `check_repo_rules` 加"就绪判定不得依赖 WS 协议层"断言, 只检查
+  `waitDaemonUp` **函数体自身**(第一版用"文件里有无 net.connect"判, 负向验证证明它太松 ——
+  改回握手时 TCP 代码仍在别处, 断言照样绿; 收紧到函数体后负向验证才红)。
+
+## v1.1.82 — 域名闸门跳过了整个 bridge/(30 个自有源文件零保护)
+
+- **实测缺口**: `check_no_internal_domains` 的 `skipDirs` 含 `"bridge"` —— 往
+  `bridge/src/tools.js` 写真实内网域, 闸门**不红**。当初跳 bridge 的理由是"别扫依赖",
+  但把整个 `bridge/` 跳过 = 桥接那 30 个自有源文件完全没有域名保护(R94 刚补了 samples,
+  这次接着补 bridge)。
+- **修**: ①bridge 纳入扫描面; ②第三方包清单(`package-lock.json`/`package.json`)按文件名跳过
+  (里面的 registry/opencollective 是包元数据, 不是我们写的域); ③判定加**标签级**规则 ——
+  域名任一段是 `test`/`example`/`invalid`/`localhost` 即假域名(`api.test.com.cn` 里的
+  "test" 与 `.test` 同义, 只按后缀判会把它当真实域)。
+- **双向验证**: bridge/src 写真实内网域 → **红**; 写保留域子域 → 绿; 写 `s3.us-east-1.amazonaws.com`
+  这类真实云域 → **红**。三项全符合。
+
 ## v1.1.81 — 样本库 30 处真实内网域从未脱敏(R55 声明与实测不符)
 
 - **合规缺口(AGENTS §1.4)**: "禁止把真实内网域名写进**任何**入库文件"。实测统计样本里的全部
