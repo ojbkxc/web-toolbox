@@ -103,4 +103,28 @@ console.log('');
   assert(m3 && /协议不是 http/.test(m3), 'jmx-url. 非 http(s) 协议 → 明说: ' + m3);
 }
 
+
+// ---- PY 与 JMX 的 url 错误语义必须一致(v1.1.78) ----
+// 同一根因(非绝对 url)在两处实现: 只修一处 = 另一处仍是裸 Invalid URL。这里并列验证。
+{
+  const pyMod = require(path.join(ROOT, 'pyscript.js'));
+  const jmxMod = require(path.join(ROOT, 'jmx.js'));
+  const mkE = (url) => [{ method: 'GET', url, path: '/x', query: '', headers: {}, body: '', status: 200, response: '', ts: '' }];
+  const msg = (fn) => { try { fn(); return null; } catch (e) { return e.message; } };
+  for (const [label, url, re] of [
+    ['相对路径', '/index.html', /第 1 条请求.*不是绝对地址/],
+    ['空 url', '', /第 1 条请求.*url 为空/],
+    ['非 http(s)', 'ftp://a.test/x', /第 1 条请求.*协议不是 http/],
+  ]) {
+    const a = msg(() => jmxMod.buildJmx(mkE(url)));
+    const b = msg(() => pyMod.buildPyScript(mkE(url)));
+    assert(!!a && re.test(a), `url-err. JMX ${label} 错误可定位`);
+    assert(!!b && re.test(b), `url-err. PY ${label} 错误可定位`);
+  }
+  // 两处都不得再出现裸错误
+  for (const [nm, src] of [['jmx.js', fs.readFileSync(path.join(ROOT, 'jmx.js'), 'utf8')], ['pyscript.js', fs.readFileSync(path.join(ROOT, 'pyscript.js'), 'utf8')]]) {
+    assert(!/const u = new URL\(e\.url\)/.test(src), `url-err. ${nm} 不再直接 new URL(e.url)`);
+  }
+}
+
 console.log('=== 导出器字段差异契约 PASS ===');

@@ -20,6 +20,25 @@ if (typeof isSkipHeader === "undefined") {
 }
 
 // Python 字符串字面量安全化: 优先 repr 语义
+// url 前置校验(与 jmx.js 同款, 同一根因): 非绝对 http(s) 时给可定位错误。
+// 引擎只入库绝对地址, 但样本(从 JMeter 官方 .jmx 解析的相对路径)会走到这里 ——
+// 裸 "Invalid URL" 既不说是哪条也不说该是什么形态。
+function assertHttpUrlPy(e, idx) {
+  const raw = e && e.url;
+  const where = "第 " + (idx + 1) + " 条请求";
+  if (typeof raw !== "string" || raw === "") {
+    throw new Error(where + " 的 url 为空(生成 PY 脚本需要绝对地址, 如 https://host/path)");
+  }
+  let u;
+  try { u = new URL(raw); } catch {
+    throw new Error(where + " 的 url 不是绝对地址: " + JSON.stringify(raw)
+      + "(相对路径无法确定 host; 需要形如 https://host/path 的完整地址)");
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new Error(where + " 的协议不是 http(s): " + JSON.stringify(raw));
+  }
+  return u;
+}
 function pyStr(s) {
   return JSON.stringify(String(s)); // JSON 字符串恰好是合法 Python 字符串(双引号)
 }
@@ -110,7 +129,7 @@ function genPyFunc(e, fname, sessionMarkers, chains = [], extracts = []) {
   const biz = Object.entries(e.headers)
     .filter(([k]) => !isSkipHeader(k));
   const headerLines = biz.map(([k, v]) => `        ${pyStr(k)}: ${pyStr(v)},`).join("\n");
-  const u = new URL(e.url);
+  const u = assertHttpUrlPy(e, e._index == null ? 0 : e._index);
   const hasQuery = e.query && e.query.length > 0;
   // 会话失效检测子串(默认统一认证文案兜底; 调用方可传该系统的失效特征)
   const markers = (sessionMarkers && sessionMarkers.length) ? sessionMarkers : ["统一认证"];

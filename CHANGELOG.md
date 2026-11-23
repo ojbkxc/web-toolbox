@@ -1,5 +1,16 @@
 # 更新记录
 
+## v1.1.78 — 同一缺陷在 PY 导出器里还在(R90 只修了一半)
+
+- **R90 的修法不完整**: 只改了 `jmx.js`。全量跑样本 → PY 导出**同样 2/14 抛裸
+  `Invalid URL`** —— 同一根因(非绝对 url)在两处实现, 只修一处等于另一处仍然瞎。
+- **修**: `pyscript.js` 加 `assertHttpUrlPy(e, idx)`, 文案与 jmx 侧一致(空 url / 相对路径 +
+  原值 + 需要 https://host/path / 非 http(s)); 唯一一处 `new URL(e.url)` 全部走它。
+- **断言升级为"跨导出器一致性"**: 三类错误 × 两个导出器 = 6 条, 再加 2 条"两处都不再直接
+  `new URL(e.url)`"。**负向验证**: 把 pyscript.js 改回裸 `new URL` → 立刻红; 恢复后绿。
+- **方法教训**: 修"同一根因的多处实现"时, 必须**全量扫同名模式**(这里 `new URL(e.url)`
+  在两个文件各一处), 否则就是 R90 那样修一半就宣布完成。
+
 ## v1.1.77 — 导出 JMX 遇到非绝对 url 只抛裸 "Invalid URL"
 
 - **实测**: 把样本库 14 个目录全量导出 JMX → **2 个抛错**(apache-jmeter、taurus/jmx-structure,
