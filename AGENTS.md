@@ -84,6 +84,19 @@
 5. **不许宣称被阻塞**：没实际尝试就说 "not attempted"；被挡下要引用真实报错。
 6. **结束卫生**：不留未提交改动；最终答复带回归结论（64/64 PASS）或 commit SHA。
 
+## 4b. 发版口径(与全局"不留 main 领先"对齐)
+
+一次发版 = **三个动作绑同一版本号**, 缺一不可:
+
+1. `manifest.json` 的 `version`(第三位递增);
+2. `CHANGELOG.md` 顶部新增 `## vX.Y.Z — 标题` 段(写根因与证据, 不写"已完成");
+3. `git tag -a vX.Y.Z` 并推送, 再创建 GitHub Release(标题/正文取 CHANGELOG)。
+
+- 校验:`node test/check_doc_counts.js` 断言 manifest ↔ CHANGELOG 同版本; tag 名 = `v` + version。
+- 创建 Release 时**不要传 `target_commitish`** —— tag 已存在时 GitHub 会以 422
+  `invalid target_commitish` 拒绝(与是否匹配无关), 这是踩过的坑。
+- 仓库无 Actions, 等价门禁是 `node test/run_all.js` 全绿(见 §2)。
+
 ## 5. Ask first(先问再做)
 
 - 新增 `chrome.permissions` / host 权限条目（影响用户安装信任面）。

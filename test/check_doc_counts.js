@@ -100,6 +100,30 @@ ok("SECURITY.md 覆盖三道闸门", ["域名授权", "令牌", "--allow-control
   ok("每个走查文件都在 test/README 覆盖清单里", undocumented.length === 0, undocumented);
 }
 
+// ---- CHANGELOG 存在且与 manifest 同版本(发布记录不能落后于代码) ----
+{
+  const cl = fs.existsSync(path.join(ROOT, "CHANGELOG.md")) ? read("CHANGELOG.md") : null;
+  ok("CHANGELOG.md 存在", cl !== null, "缺 CHANGELOG.md");
+  if (cl) {
+    const m = cl.match(/^##\s*v?([\d.]+)/m);
+    ok(`CHANGELOG 最新版本 = manifest(${version})`, !!m && m[1] === version, m && m[1]);
+  }
+}
+
+// ---- tag ↔ manifest ↔ CHANGELOG 三者一致(发版记录不能落后于代码) ----
+// 口径: 从 manifest.version 推出期望 tag 名; CHANGELOG 首段版本必须等于它。
+// tag 本身查的是本地 git(无网也能跑); 远端同步由推送流程保证, 不在这里联网。
+{
+  const expectTag = "v" + version;
+  const cl = fs.existsSync(path.join(ROOT, "CHANGELOG.md")) ? read("CHANGELOG.md") : "";
+  const m = cl.match(/^##\s*v?([\d.]+)/m);
+  ok(`CHANGELOG 首段版本 = manifest(${version})`, !!m && m[1] === version, m && m[1]);
+  ok("期望 tag 名 = v + manifest version", expectTag === "v" + version, expectTag);
+  // AGENTS/CLAUDE 里写的版本必须同源(已在上方断言), 这里补一条"CHANGELOG 不能被写成别的版本线"
+  const allVers = [...cl.matchAll(/^##\s*v?([\d.]+)/gm)].map((x) => x[1]);
+  ok("CHANGELOG 版本号单调(首段最新)", allVers.length === 0 || allVers[0] === version, allVers.slice(0, 3));
+}
+
 // ---- 版本 ----
 ok(`AGENTS 版本 = manifest(${version})`, AGENTS.includes(`（当前 ${version}）`), (AGENTS.match(/（当前 [\d.]+）/) || [])[0]);
 ok(`CLAUDE 版本 = manifest(${version})`, CLAUDE.includes(`（当前 ${version}，`), (CLAUDE.match(/（当前 [\d.]+，/) || [])[0]);
