@@ -74,14 +74,18 @@ const addAll = [];
 for (const abs of docs) {
   const rel = path.relative(ROOT, abs).replace(/\\/g, "/");
   fs.readFileSync(abs, "utf8").split(/\r?\n/).forEach((line, i) => {
-    // 注释行豁免: 文档里写"禁止 git add -A"是要求, 不是用法
-    if (/^\s*(\/\/|\*|\/\*|#|>|-)/.test(line)) return;
-    if (/(^|\s)git\s+add\s+(-A|-a|\.)(\s|$|`)/.test(line) && !/禁止|不许|Never|never|do not/i.test(line)) {
+    // 注释行豁免: 只豁免真正的注释语法。**不能豁免 Markdown 列表项("- ")**
+    // —— 那会把"用 git add -A"这种真实用法当成注释放过(v1.1.70 实证: 四种形态全漏)。
+    // 纯注释行里写"禁止 git add -A"由下面的语义豁免(禁止/不许/Never)兜住。
+    if (/^\s*(\/\/|\*|\/\*|#|>)/.test(line)) return;
+    // 匹配: 前面是任意非标识符字符(行首/引号/等号/括号/Markdown 列表符皆可)。
+    // 禁用形态: --all / -A / -a / -u / "."
+    if (/(?<![\w-])git\s+add\s+(?:--all|-A|-a|-u|\.)(?![\w-])/.test(line) && !/禁止|不许|Never|never|do not/i.test(line)) {
       addAll.push(`${rel}:${i + 1}`);
     }
   });
 }
-ok("脚本/文档里没有 `git add -A|.|-a` 的用法", addAll.length === 0, addAll);
+ok("脚本/文档里没有「全量/单点 add」的用法", addAll.length === 0, addAll);
 
 // ---------- E: 零依赖 ----------
 ok("仓库根没有 package.json(扩展源码即产物)", !fs.existsSync(path.join(ROOT, "package.json")), "存在 package.json");
@@ -149,7 +153,7 @@ ok(`扩展运行时代码不引第三方 npm 包(${extFiles.length} 个文件已
   ok("闸门自证: 框架级跳过会被抓", caught.frameworkSkip === 1, caught);
   ok("闸门自证: TC.skip 环境跳过不被误判", caught.envSkipKept === 1, caught);
   ok("闸门自证: 提前 process.exit(0) 会被抓, 字符串里的不算", caught.earlyExit === 1, caught);
-  ok("闸门自证: git add -A/. 会被抓, 文档里描述禁令的不算", caught.addAll === 2 && caught.addAllDocKept === 1, caught);
+  ok("闸门自证: 全量 add 会被抓, 文档里描述禁令的不算", caught.addAll === 2 && caught.addAllDocKept === 1, caught);
 }
 
 console.log(fails ? `=== repo rules FAIL: ${fails} ===` : "=== repo rules PASS ===");
