@@ -84,4 +84,23 @@ console.log('');
   assert(a === b, `har-time. 同份导出内缺 ts 条目共享同一基准(${a} == ${b})`);
 }
 
+
+// ---- 非绝对 url 的错误必须可定位(v1.1.77) ----
+// 引擎只入库绝对 http(s), 所以正常录制不会触发; 但样本库(从 JMeter 官方 .jmx 解析的相对路径)
+// 与未来的导入功能会 —— 裸 `Invalid URL` 既不说哪条、也不说该是什么形态。
+{
+  const jmxMod = require(path.join(ROOT, 'jmx.js'));
+  const mkE = (url) => [{ method: 'GET', url, path: '/x', query: '', headers: {}, body: '', status: 200, response: '', ts: '' }];
+  const shape = (fn) => { try { fn(); return null; } catch (e) { return e.message; } };
+  const m1 = shape(() => jmxMod.buildJmx(mkE('/index.html')));
+  assert(m1 && /第 1 条请求/.test(m1), 'jmx-url. 相对路径 → 错误指明第几条请求: ' + m1);
+  assert(m1 && /\/index\.html/.test(m1), 'jmx-url. 错误带上原始 url');
+  assert(m1 && /https:\/\/host\/path|绝对地址/.test(m1), 'jmx-url. 错误说明期望形态(绝对地址)');
+  assert(m1 && !/^Invalid URL$/.test(m1), 'jmx-url. 不再是裸 Invalid URL');
+  const m2 = shape(() => jmxMod.buildJmx(mkE('')));
+  assert(m2 && /url 为空/.test(m2), 'jmx-url. 空 url → 明说为空: ' + m2);
+  const m3 = shape(() => jmxMod.buildJmx(mkE('ftp://a.test/x')));
+  assert(m3 && /协议不是 http/.test(m3), 'jmx-url. 非 http(s) 协议 → 明说: ' + m3);
+}
+
 console.log('=== 导出器字段差异契约 PASS ===');

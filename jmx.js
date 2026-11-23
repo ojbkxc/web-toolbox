@@ -169,10 +169,30 @@ function samplerName(e, used) {
   return name;
 }
 
+// url 前置校验: 非绝对 http(s) 地址时给出**可定位**的错误。
+// 为什么不是裸 new URL(): 引擎只入库绝对 http(s)(background 里先 new URL 再判协议), 所以
+// 正常录制不会走到这里; 但样本库(从 JMeter 官方 .jmx 解析出的相对路径如 "/index.html")与未来
+// 的导入功能会 —— 裸 "Invalid URL" 既不说是哪条, 也不说该是什么形态, 用户只能盲改。
+function assertHttpUrl(e, idx) {
+  const raw = e && e.url;
+  const where = "第 " + (idx + 1) + " 条请求";
+  if (typeof raw !== "string" || raw === "") {
+    throw new Error(where + " 的 url 为空(导出 JMX 需要绝对地址, 如 https://host/path)");
+  }
+  let u;
+  try { u = new URL(raw); } catch {
+    throw new Error(where + " 的 url 不是绝对地址: " + JSON.stringify(raw)
+      + "(相对路径无法确定 host; 导出 JMX 需要形如 https://host/path 的完整地址)");
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new Error(where + " 的协议不是 http(s): " + JSON.stringify(raw));
+  }
+  return u;
+}
 // 单条请求 -> HTTPSamplerProxy + 挂 HeaderManager
 // opts: { domain, protocol, correlated: Map<path+name, "${var}"> }
 function httpSampler(e, opts) {
-  const u = new URL(e.url);
+  const u = assertHttpUrl(e, e._index == null ? 0 : e._index);
   const name = e._samplerName;
   const parts = [];
 
@@ -313,7 +333,7 @@ function buildJmx(entries, opts = {}) {
   const sessionMarkers = Array.isArray(opts.sessionMarkers) ? opts.sessionMarkers : [];
   const first = entries[0];
   if (!first) throw new Error("没有已录请求");
-  const u = new URL(first.url);
+  const u = assertHttpUrl(first, 0);
   // 主机变量化(v1.0.79): 唯一 hostname 按首现序编号 HOST_1/HOST_2..., 采样器 domain 一律
   // 引用 ${HOST_n}, UDF 值=录制 hostname —— 跨环境(UAT→PROD)只改 UDF 值, 不逐采样器手改。
   // 与手写 KTKI UAT.jmx 的 BASE_URL/LOGIN_URL 同款姿势(29 采样器全走 ${BASE_URL});
@@ -322,10 +342,10 @@ function buildJmx(entries, opts = {}) {
   // 的变量分支 —— domain 变量形态回读需走相对路径解析, 两面同改)。
   const hostMap = new Map(); // hostname -> HOST_n(首现序)
   for (const e of entries) {
-    const h = new URL(e.url).hostname;
+    const h = assertHttpUrl(e, entries.indexOf(e)).hostname;
     if (!hostMap.has(h)) hostMap.set(h, "HOST_" + (hostMap.size + 1));
   }
-  const hostRef = (e) => "${" + hostMap.get(new URL(e.url).hostname) + "}";
+  const hostRef = (e) => "${" + hostMap.get(assertHttpUrl(e, entries.indexOf(e)).hostname) + "}";
   const domain = opts.domainOverride || "${" + hostMap.get(u.hostname) + "}";
   const title = opts.title || `web-toolbox 录制 ${new Date().toISOString().slice(0, 10)}`;
   // CSV 数据驱动列(v1.0.82): collectCsvData 产出 [{var, default}]。空则不生成 CSVDataSet。
@@ -346,7 +366,7 @@ function buildJmx(entries, opts = {}) {
   // 域名一律 ${HOST_n} 变量引用(v1.0.79): 跨域各走各的变量, 环境切换改 UDF 值即可
   // (定义前置: setUp 线程组块在 TestPlan 组件段就调用它)
   const samplerXml = (list) => list.map((e) => {
-    const eu = new URL(e.url);
+    const eu = assertHttpUrl(e, entries.indexOf(e));
     return httpSampler(e, { domain: hostRef(e), protocol: eu.protocol.replace(":", "") });
   }).join("\n");
   const body = [];
