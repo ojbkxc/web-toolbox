@@ -1,5 +1,14 @@
 # 更新记录
 
+## v1.1.60 — 一条命令打包(bridge/pack.cjs)
+
+- **动机**: 用户装扩展要手动挑文件(排 test/samples/bridge/docs), 挑错就装不上或带脏东西。
+- **实现**: `bridge/pack.cjs` —— 纯 Node(zlib + 手写 zip 结构, 零依赖)。**白名单**收集:
+  manifest + 根 js(**排除 `test_*`/`*_test.js`**)+ popup/sidepanel/options/icons 四目录。
+  产出 web-toolbox.zip(22 文件, 448KB)。自检内置(读回 zip 验 manifest 在、无违禁路径);
+  真实 `Expand-Archive` 展开复验通过(22 文件、零 test 混入)。
+- **首包踩坑**: 根目录 ".js 全收"把 test_regression.js / mock_bg_test.js 打进去了 ——
+  排除规则与 test/ 目录同口径(`test_*` 与 `*_test.js` 都算测试)。
 ## v1.1.59 — docs/skills.md(生成式 AI 技能参考)
 
 - 参考仓库有 skills/ 目录(每个技能一份 SKILL.md); 本仓库十技能的说明散在 README 与测试
