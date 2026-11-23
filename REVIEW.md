@@ -4,7 +4,7 @@
 目标: 持续评审并完善本仓库; 每轮必须"取证 → 修根因 → 回归 → 记录", 不许只写结论。
 
 **门禁(2026-11-23 起)**
-- 扩展回归: `node test/run_all.js` → **60/60 PASS**(内含桥接 unit/exporters/doctor/smoke)
+- 扩展回归: `node test/run_all.js` → **61/61 PASS**(内含桥接 unit/exporters/doctor/smoke)
 - 桥接端到端: `node bridge/smoke.mjs` → **52 PASS / 0 FAIL**(任意 cwd)
 - 桥接单测: `node bridge/unit.mjs` → **71 PASS / 0 FAIL**; `node bridge/test-exporters.mjs` → **46 PASS / 0 FAIL**
 - 桥接自检: `node bridge/src/doctor.js` → **18/18 PASS**(需先起 daemon; 含监听地址/活体握手/协议与包版本一致性/归档目录/令牌权限)
@@ -27,6 +27,21 @@
   (实现改了、文档忘了改, 当轮就红)。补表行后绿。
 - smoke +1(52), `check_bridge_schema` 的"七个机读工具"断言同步更新
   (bridge_status/net_list/net_get/net_hosts/correlate/tab_list/chain_replay)。
+
+### R54: AI 外发路径单源闸门(AGENTS 硬规则的机器执行)
+
+- **AGENTS 写着**"数据卫生管线不可绕过", 但规则要能被执行才算规则。实测确认了现状是好的:
+  10 个 `build*Prompt` 全在 `aireport.js` 且**每个内部都自带清洗**; sidepanel 6 个 AI 入口
+  一律 `build*Prompt` → `callLlm`, 没有旁路拼 prompt。
+- **但这条性质没人钉**: 新增一个忘清洗的 `build*Prompt`, 或新增一个直接拼 messages 调
+  `callLlm` 的入口, 现有测试(清洗规则 / try-catch 守卫 / prompt 一致性)都不会红。
+- **新增** `test/check_ai_egress.js` 七条: 每个 build*Prompt 自带清洗、每处 callLlm 的宿主
+  经 build*Prompt、build*Prompt 单源(别处不许复制)、skill.js 委托 aireport 且**不自己再洗一遍**
+  (防双份规则漂移)。
+- **白名单要能自证**: 唯一例外是选项页 `testLlm`(只发固定探测文本验证地址/Key 可用, 不碰 harvest);
+  另有断言校验"白名单例外函数体里不出现 entries/harvest/exportRows" —— 一旦例外开始夹带条目,
+  白名单立刻失效报警。
+- SECURITY.md 补一段"单源可验证", 把这条从实现细节提升成对外承诺。
 
 ### R53: doctor 端到端(21 条) —— 排障承诺必须有运行时证据
 

@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 60 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 61 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -84,6 +84,8 @@ node test/check_xxx.js        # 单跑一个
 | check_bg_detach_guard | background 侧"桥接自发 detach 不清录制状态"守卫(vm 跑真实 background.js): 标记 `toolboxBridgeOwnDetach` 含该 tabId 时 onDetach 必须直接 return(**detach 0 次、不写 storage**);非桥接 detach(用户点黄条取消/被抢走)必须真的 detach 并清 attach 记录;标记缺失不抛错仍清理;无 tabId 事件不炸(v1.1.36) | v1.1.36 |
 
 | check_ui_wiring | 页面 JS ↔ HTML 接线闸门(sidepanel/popup/options 三对): `$("literal")`/`getElementById("literal")` 的 id 必须存在于「HTML 静态 id ∪ JS 模板 id」(侧栏详情面板是 innerHTML 拼的);拼接形态(如 `$("pg"+tab)`)不参与判定以免误红;HTML id 不得重复;role=tab 的 aria-controls 必须指向真实面板;控件不得"既无引用也无内联事件"(v1.1.37) | v1.1.37 |
+
+| check_ai_egress | AI 外发路径单源闸门: 10 个 `build*Prompt` 全部在 aireport.js 且**每个内部都调清洗**(aiSanitizeEntry/scrubLong/scrubSensitiveKeys);每处 `callLlm` 的宿主函数必须经 `build*Prompt`(options 的 testLlm 是唯一白名单例外, 且自检"例外不接触录制数据");build*Prompt 不许在别处复制;skill.js 委托 aireport 且不自己再洗一遍(防双份规则漂移)(v1.1.43) | v1.1.43 |
 
 ## 维护约定
 

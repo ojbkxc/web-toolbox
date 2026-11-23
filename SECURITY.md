@@ -53,6 +53,10 @@ web-toolbox 是一套**本机浏览器自动化工具**: Chrome 扩展负责录�
 - **不外发**: 录制数据、Cookie、Token 都留在本机。AI 分析走你配置的端点(默认本地代理
   `http://127.0.0.1:8787`), 发出去前扩展侧统一执行: 剔除 `Cookie`/`Authorization`、
   长 token 打码、body/响应按上限截断。
+- **单源可验证**(v1.1.43): 所有外发 prompt 都由 `aireport.js` 的 10 个 `build*Prompt` 产出,
+  **每个内部都调清洗**, 且每处 `callLlm` 的宿主函数都必须经 `build*Prompt`
+  —— 由 `test/check_ai_egress.js` 逐条断言(唯一例外是选项页「测试连接」, 它只发固定探测文本,
+  白名单本身也要通过"不接触录制数据"的自检)。
 - **`chrome.storage.local`**: 录制会话(带 `{v, entries}` 信封, 单会话上限 3000 条)。
 - **`~/.web-toolbox/archive/`**: 可选的按天 JSONL 长归档(0600), 与扩展内数据同源同口径;
   内容是**明文流量**, 含业务参数, 不需要就关掉(`--archive-dir` 指到临时目录或删掉即可)。
