@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 71 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 72 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -106,6 +106,8 @@ node test/check_xxx.js        # 单跑一个
 | bridge/test-reconnect | 桥接客户端重连语义(vm 跑真实 bridge-client.js + 可控 FakeWS): 连接失败→lastError 有值+alarm 重连(SW 生命周期安全);READY→connected, daemon 断开→重新 alarm;恢复→lastError 清空;hello 帧含令牌与协议版本(v1.1.55) | v1.1.55 |
 
 | bridge/test-auth | **协议矩阵**(独立 daemon, 每规则一实例): 错令牌→unauthorized+不崩 / 版本不符→protocol_mismatch / 未鉴权 QUERY→拒绝 / **扩展身份发 QUERY→forbidden**(白名单: 仅代理) / 控制方法未开 --allow-control→错误带开启方式 / 正确配置→ready; ⑤需先挂假扩展(否则被"扩展未连接"先拦)(v1.1.56) | v1.1.56 |
+
+| bridge/test-perf | 热路径性能基线(先量后断): checkXml 500条/300ms(基线16ms)、net_list 3000条UTF-8字节/100ms(2ms)、buildHAR 1000条中文/200ms(8ms)、buildJmx 500条全管线/400ms(15ms) —— 阈值=实测中位 8~25x, 只拦数量级退化不拦机器抖动(R15/R26 假红教训的正面做法)(v1.1.57) | v1.1.57 |
 
 ## 维护约定
 

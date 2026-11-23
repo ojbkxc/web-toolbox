@@ -29,12 +29,13 @@ if (BRIDGE_DEPS) {
     { name: "bridge-doctor", file: path.join(ROOT, "bridge", "test-doctor.mjs") },
     { name: "bridge-reconnect", file: path.join(ROOT, "bridge", "test-reconnect.mjs") },
     { name: "bridge-auth", file: path.join(ROOT, "bridge", "test-auth.mjs") },
+    { name: "bridge-perf", file: path.join(ROOT, "bridge", "test-perf.mjs") },
     { name: "bridge-smoke", file: path.join(ROOT, "bridge", "smoke.mjs") },
   ];
   if (scanIdx >= 0) suites.splice(scanIdx, 0, ...bridgeSuites);
   else suites.push(...bridgeSuites);
 } else {
-  console.log("  SKIP(env) bridge-unit/exporters/doctor/reconnect/auth/smoke — bridge/node_modules 未安装(cd bridge && npm install)");
+  console.log("  SKIP(env) bridge-unit/exporters/doctor/reconnect/auth/perf/smoke — bridge/node_modules 未安装(cd bridge && npm install)");
 }
 
 let failed = [];
