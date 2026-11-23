@@ -28,6 +28,12 @@ if (fs.existsSync(gen) && fs.existsSync(target)) {
   const same = Buffer.compare(orig, now) === 0;
   if (same) {
     ok("tool-reference.md 与 tools.js 同步(生成器产物逐字节一致)", true, "n/a");
+    // 与 skills 同一条铁律(R79 实证): 逐字节一致只防手改, 防不了**抽取器漏项**。
+    // 独立数 tools.js 的 register 名与文档 "### `name`" 数。
+    const toolsSrc = fs.readFileSync(path.join(ROOT, "bridge", "src", "tools.js"), "utf8");
+    const regCount = [...toolsSrc.matchAll(/\bregister\("([^"]+)"/g)].length;
+    const docTools = (fs.readFileSync(target, "utf8").match(/^### `[^`]+`/gm) || []).length;
+    ok("tool-reference.md 工具数 = tools.js register 数(防抽取被正则漏掉)", regCount === docTools, { regCount, docTools });
   } else {
     // 保留生成版会覆盖用户手改 —— 恢复原文件, 红给 diff
     fs.writeFileSync(target, orig);

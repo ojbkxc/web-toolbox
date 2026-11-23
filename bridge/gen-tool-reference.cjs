@@ -16,7 +16,7 @@ for (const m of annBlock.matchAll(/^\s{2}([a-z_]+):\s*\{([^}]*)\},?$/gm)) {
 }
 
 // 工具块
-const names = [...src.matchAll(/\bregister\("([a-z_]+)"/g)].map((m) => m[1]);
+const names = [...src.matchAll(/\bregister\("([^"]+)"/g)].map((m) => m[1]);
 const tools = names.map((n, i) => {
   const start = src.indexOf(`register("${n}"`);
   const end = i + 1 < names.length ? src.indexOf(`register("${names[i + 1]}"`) : src.length;
