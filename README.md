@@ -122,6 +122,7 @@
 | 文档 | 内容 |
 |---|---|
 | [docs/tool-reference.md](./docs/tool-reference.md) | **工具参考(由 bridge/src/tools.js 生成, 闸门保证同步)**: 27 个工具的参数表与标记 |
+| [docs/skills.md](./docs/skills.md) | **AI 技能参考(由 skill.js 生成)**: 十技能说明与数据卫生边界 |
 | [docs/mcp-clients.md](./docs/mcp-clients.md) | 接入 Claude Code / Cursor / Trae: 拓扑、配置样例、常见问题、验证命令 |
 | [docs/troubleshooting.md](./docs/troubleshooting.md) | 排障: doctor 自检 → 症状 → 根因 → 修法(连不上 / forbidden / 录不到 / 导出过大 / 重放差异) |
 | [SECURITY.md](./SECURITY.md) | 安全模型: 三道闸门(域名授权 / 桥接令牌 / `--allow-control`)、数据落点、JS 执行面 |

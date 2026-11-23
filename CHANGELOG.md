@@ -1,5 +1,11 @@
 # 更新记录
 
+## v1.1.59 — docs/skills.md(生成式 AI 技能参考)
+
+- 参考仓库有 skills/ 目录(每个技能一份 SKILL.md); 本仓库十技能的说明散在 README 与测试
+  注释里。新增 `bridge/gen-skills-doc.cjs` → `docs/skills.md`(技能表 + 数据卫生边界),
+  由 `check_tool_reference` 的同一闸门保证与 skill.js **逐字节同步**。
+
 ## v1.1.58 — docs/tool-reference.md(生成式工具参考)
 
 - **动机**: 参考仓库有独立的 tool-reference 文档(按类别/逐工具/参数表); 本仓库的参数信息

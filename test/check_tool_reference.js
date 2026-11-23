@@ -13,6 +13,7 @@ const ok = (name, cond, got) => {
 
 const target = path.join(ROOT, "docs", "tool-reference.md");
 const gen = path.join(ROOT, "bridge", "gen-tool-reference.cjs");
+// 同主题的第二个生成器: docs/skills.md(skill.js 的技能表) —— 复用同一闸门。
 
 ok("生成器存在", fs.existsSync(gen), gen);
 ok("docs/tool-reference.md 存在", fs.existsSync(target), target);
@@ -38,6 +39,25 @@ if (fs.existsSync(gen) && fs.existsSync(target)) {
       if (diff.length >= 3) break;
     }
     ok("tool-reference.md 与 tools.js 同步", false, { hint: "重跑 node bridge/gen-tool-reference.cjs", diff });
+  }
+}
+
+// ---- skills.md 同步(skill.js → docs/skills.md, 同一生成式思路) ----
+{
+  const genS = path.join(ROOT, "bridge", "gen-skills-doc.cjs");
+  const targetS = path.join(ROOT, "docs", "skills.md");
+  ok("skills 生成器存在", fs.existsSync(genS), genS);
+  if (fs.existsSync(genS) && fs.existsSync(targetS)) {
+    const origS = fs.readFileSync(targetS);
+    execSync(`node "${genS}"`, { cwd: ROOT, windowsHide: true });
+    const nowS = fs.readFileSync(targetS);
+    const sameS = Buffer.compare(origS, nowS) === 0;
+    if (sameS) {
+      ok("skills.md 与 skill.js 同步(生成器产物逐字节一致)", true, "n/a");
+    } else {
+      fs.writeFileSync(targetS, origS);
+      ok("skills.md 与 skill.js 同步", false, { hint: "重跑 node bridge/gen-skills-doc.cjs" });
+    }
   }
 }
 
