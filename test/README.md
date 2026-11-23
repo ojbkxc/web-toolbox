@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 66 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 67 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -96,6 +96,8 @@ node test/check_xxx.js        # 单跑一个
 | check_user_journey | 用户旅程可用性(新人装完真的能用): manifest 必须有 commands(否则快捷键页是空的)且每条带 description;popup 五键齐;侧栏空态给"去配置";**popup 状态机按钮显隐行为级**(idle/recording/paused/未配置域名 四态, vm 跑真实 popup.js) —— 判据 style.display !== "none"(用 "" 表示显示)(v1.1.48) | v1.1.48 |
 
 | check_sample_evidence | 样本证据链闸门: 15 个样本目录必须都在 INDEX.md 被提及(headless-recorder 曾漏在索引树外)、sample.json 必填 source/entries 且条数与 loader 实载一致、meta.url 不指向真实内网域(保留域/RFC·开源文档域白名单)、含闸门自证(v1.1.49) | v1.1.49 |
+
+| check_sidepanel_handlers | 侧栏**动态生成按钮**的事件绑定完整性: innerHTML 模板里的每个按钮 id 必须在模板外有 `$()/getElementById` 绑定(漏绑=点击无反应的静默故障); 98 个绑定引用的 id 必须有声明面(HTML/字符串拼接模板/.id 赋值); addEventListener 同口径; 含闸门自证(v1.1.50) | v1.1.50 |
 
 ## 维护约定
 
