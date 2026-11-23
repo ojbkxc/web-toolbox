@@ -227,7 +227,9 @@ const J = require("./jmx.js");
   // XML 合法性: 纯 JS 良构校验(接受面等价 xml.dom.minidom.parse)。早先用 bash+python 跑,
   // Windows PATH 里没有 bash 时 spawnSync ENOENT —— 46 项门禁环境性假红, 与代码无关。
   const xmlJmx = TC.checkXml(jmx);
+  const structJmx = TC.checkJmxStructure(jmx);   // 良构 ≠ JMeter 打得开(缺 hashTree 配对照样废)
   assert.ok(xmlJmx.ok, "JMX 应为良构 XML: " + xmlJmx.error);
+  assert.ok(structJmx.ok, "JMX 应满足 JMeter 结构约定: " + structJmx.error);
   // UDF 必须是 ${__P(name,default)} 才能被 -J 覆盖; threads 默认 1(巡检安全口径, v1.0.90)
   assert.ok(jmx.includes("${__P(threads,1)}"), "UDF threads 应为 __P 格式且默认 1(巡检安全)");
   assert.ok(jmx.includes("${__P(loops,1)}"), "UDF loops 应为 __P 格式");
@@ -412,7 +414,9 @@ const AUTH = require("./auth.js");
   assert.ok(bizIdx > once.indexOf("</hashTree>") && bizIdx > preProfileIdx, "业务应在 OnceOnly 之后");
   // XML 合法(纯 JS 良构校验, 见 test/lib/toolchain.js)
   const xmlOnce = TC.checkXml(once);
+  const structOnce = TC.checkJmxStructure(once);
   assert.ok(xmlOnce.ok, "前置 OnceOnly 的 JMX 应良构: " + xmlOnce.error);
+  assert.ok(structOnce.ok, "重放前 JMX 应满足 JMeter 结构约定: " + structOnce.error);
   // 3) autoRelogin: IfController 两个 + BeanShell 置变量 + JSR223 失效检测
   const relogin = J.buildJmx(entries, { prelude: [1, 2], autoRelogin: true, sessionMarkers: ["统一认证"] });
   assert.ok(relogin.includes("IfController"), "autoRelogin 应生成 IfController");
@@ -421,7 +425,9 @@ const AUTH = require("./auth.js");
   assert.ok(relogin.includes("JSR223PostProcessor"), "应有会话失效检测");
   assert.ok(relogin.includes("__logged_in"), "应使用 __logged_in 变量");
   const xmlRelogin = TC.checkXml(relogin);
+  const structRelogin = TC.checkJmxStructure(relogin);
   assert.ok(xmlRelogin.ok, "autoRelogin 的 JMX 应良构: " + xmlRelogin.error);
+  assert.ok(structRelogin.ok, "重登后 JMX 应满足 JMeter 结构约定: " + structRelogin.error);
 }
 
 // ---------- pyscript ----------

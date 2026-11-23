@@ -135,6 +135,60 @@ function textErr(text, inAttr) {
  * @param {string} src
  * @returns {{ok:true}|{ok:false,error:string}}
  */
+
+/**
+ * 校验 JMX 的 **JMeter 语义结构**(良构性之外的约束)。
+ *
+ * 为什么需要: checkXml 只验单根/配对/引号/实体 —— 造一个良构但缺 hashTree 配对、
+ * 或 TestPlan 不在最前的 JMX, 它照样返回 ok:true, 而 JMeter 打不开。这类"良构但语义非法"
+ * 是导出器最容易出的回归(漏一个 </hashTree> 就整份废)。
+ *
+ * 规则(按真实产物 + JMeter 5.x 要求):
+ *   1. 根元素必须是 jmeterTestPlan;
+ *   2. 直接子元素必须恰好是一个 hashTree;
+ *   3. 每个可执行元素(TestPlan/ThreadGroup/HTTPSamplerProxy/ConfigTestElement 等)
+ *      之后必须紧跟一个 hashTree(要么兄弟位置下一个是 hashTree, 要么它本身就是 hashTree 的子项);
+ *   4. 可执行元素必须有 testclass 与 testname 属性(缺了 JMeter 会当脏数据跳过)。
+ * @param {string} src
+ * @returns {{ok:true}|{ok:false,error:string}}
+ */
+function checkJmxStructure(src) {
+  const s = String(src);
+  const bad = (e) => ({ ok: false, error: e });
+  if (!/<jmeterTestPlan[\s>]/.test(s)) return bad("根元素不是 jmeterTestPlan");
+
+  // ① 根下必须只有一个 hashTree(去掉声明/注释后)
+  const headOpen = s.indexOf("<jmeterTestPlan");
+  const headClose = s.indexOf(">", headOpen) + 1;
+  const rootClose = s.lastIndexOf("</jmeterTestPlan>");
+  if (rootClose < 0) return bad("缺 </jmeterTestPlan> 闭合");
+  const inner = s.slice(headClose, rootClose).replace(/<!--[\s\S]*?-->/g, "");
+  const topLevel = [...inner.matchAll(/<\/?([A-Za-z][\w.-]*)/g)].map((x) => x[1]);
+  const firstTop = topLevel[0];
+  if (firstTop !== "hashTree") return bad("jmeterTestPlan 的第一个子元素应是 hashTree, 实际是 " + firstTop);
+
+  // ② 每个可执行元素的闭合标签之后必须紧跟 <hashTree(自闭合元素则看它后面)
+  const EXEC = "TestPlan|ThreadGroup|HTTPSamplerProxy|ConfigTestElement|GenericController|LoopController|IfController|CSVDataSet|ResponseAssertion|JSONPathExtractor|RegexExtractor|HeaderManager|CookieManager|Arguments|ResultCollector";
+  const closeRe = new RegExp("</(" + EXEC + ")>", "g");
+  let m;
+  while ((m = closeRe.exec(s))) {
+    const after = s.slice(closeRe.lastIndex).replace(/^\s+/, "");
+    if (!after.startsWith("<hashTree")) {
+      const got = (after.match(/^<\/?([A-Za-z][\w.-]*)/) || [])[1] || "(结尾)";
+      return bad(`${m[1]} 闭合后应紧跟 <hashTree, 实际是 ${got}`);
+    }
+  }
+
+  // ③ 可执行元素必须有 testclass / testname
+  const openRe = new RegExp("<(" + EXEC + ")\\b((?:[^>\"']|\"[^\"]*\"|'[^']*')*)>", "g");
+  let o;
+  while ((o = openRe.exec(s))) {
+    const attrs = o[2] || "";
+    if (!/\btestclass=/.test(attrs)) return bad(`<${o[1]}> 缺 testclass 属性(JMeter 会当脏数据跳过)`);
+    if (!/\btestname=/.test(attrs)) return bad(`<${o[1]}> 缺 testname 属性`);
+  }
+  return { ok: true };
+}
 function checkXml(src) {
   const s = String(src);
   const stack = [];
@@ -266,5 +320,4 @@ async function waitFor(pred, opts = {}) {
 }
 
 module.exports = {
-  pythonBin, pyRun, skip, skipCount, skipSummary, waitHttp, checkXml, waitFor,
-};
+  pythonBin, pyRun, skip, skipCount, skipSummary, waitHttp, checkXml, waitFor, checkJmxStructure,};

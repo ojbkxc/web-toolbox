@@ -1,5 +1,18 @@
 # 更新记录
 
+## v1.1.75 — JMX 只验良构不验结构(良构但 JMeter 打不开)
+
+- **实测缺口**: `checkXml` 只验**良构性**(单根/配对/引号/实体)。造一个良构但语义非法的 JMX:
+  `TestPlan` 闭合后缺 hashTree、`ResultCollector` 后缺 hashTree、可执行元素缺 `testclass` ——
+  `checkXml` 全部返回 `ok:true`。而这类结构错误**在 JMeter 里就是"整份打不开"**。
+- **新增** `checkJmxStructure()`(test/lib/toolchain.js), 四条规则:
+  根必须是 `jmeterTestPlan`; 根下第一个子元素必须是 `hashTree`; 每个可执行元素的**闭合标签**
+  之后必须紧跟 `<hashTree`; 可执行元素必须有 `testclass`/`testname`。
+- **接入**: `test_regression` 三处 JMX 断言(基础导出/重放前/重登后)各补一条结构断言。
+- **双向验证**: 真实产物绿; 四类"良构但结构坏"全部红(删 hashTree / 缺 testclass / 根名错 /
+  根哈希树改名)。修校验器时踩了两个坑(把属性当子元素、栈状态机在深层嵌套里失准), 最终改为
+  **文本相邻性检查**——简单且贴合 JMeter 的真实要求。
+
 ## v1.1.74 — 版本错位的错误提示用户无从执行(缺两端版本对比入口)
 
 - **审计方法**: 逐条检查 8 个 wire 错误码的 hint 是否"恰好可执行"(给出字段名/命令/参数,
