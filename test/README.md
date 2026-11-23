@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 73 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 74 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -110,6 +110,8 @@ node test/check_xxx.js        # 单跑一个
 | bridge/test-perf | 热路径性能基线(先量后断): checkXml 500条/300ms(基线16ms)、net_list 3000条UTF-8字节/100ms(2ms)、buildHAR 1000条中文/200ms(8ms)、buildJmx 500条全管线/400ms(15ms) —— 阈值=实测中位 8~25x, 只拦数量级退化不拦机器抖动(R15/R26 假红教训的正面做法)(v1.1.57) | v1.1.57 |
 
 | check_tool_reference | 工具参考文档同步闸门: docs/tool-reference.md 必须与 `bridge/gen-tool-reference.cjs` 的生成产物**逐字节一致**(备份→重生成→比较→恢复; 不一致给前三行 diff 与重跑命令) —— 手改文档=漂移, 改工具参数后必须重跑生成器(v1.1.58) | v1.1.58 |
+
+| check_record_all | **录制不变量「永远全录」**(AGENTS §1.7 唯一长期无闸门的一条): 2xx/3xx/4xx/5xx、任意 mime(html/png/SSE/空)、空响应(204)、超长体(截断不丢条目)全部入库; 仅 loadingFailed 与非授权域不入库。负向验证过: 注入"丢弃非 200"立刻 4 条红(v1.1.69) | v1.1.69 |
 
 ## 维护约定
 
