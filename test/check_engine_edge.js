@@ -347,6 +347,43 @@ const ids = () => (harvest()?.entries || []).map((e) => e.id);
     ok(hv && hv.v === 1 && hv.entries.length === 0, "清空落库是空信封(非 remove, onChanged 清空分支依赖 newValue)");
   }
 
+  // 9) 永远全录(v1.1.45, AGENTS 硬规则 7 的行为级断言): 过滤/清洗只影响显示与导出,
+  //    引擎入库不做 skippable —— 静态资源/OPTIONS 预检/SSE 全部入列。
+  //    引擎唯一合法过滤是域名授权: 未授权域只进 unmatchedHosts(诊断可见), 不入库。
+  {
+    await msg("stopRecording");
+    mem["toolbox.harvest"] = { v: 1, entries: [] };
+    await msg("setDomains", { domains: ["api.example.com"] });
+    await msg("startRecording", { tabId: 123 });
+    const mkReq = (id, u, m) => fire("Network.requestWillBeSent", { requestId: id, timestamp: 20, request: { url: u, method: m, headers: {} } });
+    mkReq("c9-1", "https://api.example.com/app.css", "GET");
+    mkReq("c9-2", "https://api.example.com/vendor.js", "GET");
+    mkReq("c9-3", "https://api.example.com/api/login", "OPTIONS");
+    mkReq("c9-4", "https://api.example.com/api/stream", "GET");
+    mkReq("c9-5", "https://api.example.com/api/order", "POST");
+    mkReq("c9-6", "https://other.example.net/api/secret", "GET");
+    const finish = (id, mime) => {
+      fire("Network.responseReceived", { requestId: id, response: { status: 200, mimeType: mime } });
+      fire("Network.loadingFinished", { requestId: id, timestamp: 21 });
+    };
+    finish("c9-1", "text/css");
+    finish("c9-2", "application/javascript");
+    finish("c9-3", "text/plain");
+    finish("c9-4", "text/event-stream");
+    finish("c9-5", "application/json");
+    await sleep(120);
+    const h9 = harvest().entries || [];
+    const p9 = h9.map((e) => e.path).join(",");
+    ok(p9.includes("/app.css") && p9.includes("/vendor.js"), "9a 静态资源(.css/.js)入列 —— 引擎不做 skippable: " + p9);
+    ok(h9.some((e) => e.method === "OPTIONS"), "9b OPTIONS 预检入列 —— 清洗是导出层的事: " + p9);
+    const sse = h9.find((e) => /event-stream/i.test(String(e.mime || "")));
+    ok(!!sse && sse.path === "/api/stream", "9c SSE 条目带 mime 入列: " + p9);
+    ok(p9.includes("/api/order"), "9d 普通业务条目入列: " + p9);
+    ok(!h9.some((e) => e.path === "/api/secret"), "9e 未授权域不入库(引擎唯一合法过滤是域名授权)");
+    const st = await msg("getRecInfo");
+    ok(st && (st.unmatched || []).some((x) => /other\.example\.net/.test(x)), "9f 未授权域计入 unmatchedHosts(诊断可见): " + JSON.stringify(st && st.unmatched));
+    await msg("stopRecording");
+  }
   await msg("stopRecording");
   console.log(fail ? `\n=== 引擎边界 FAIL: ${fail} ===` : `\n=== 引擎边界走查 PASS ===`);
   process.exit(fail ? 1 : 0);
