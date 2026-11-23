@@ -4,7 +4,7 @@
 目标: 持续评审并完善本仓库; 每轮必须"取证 → 修根因 → 回归 → 记录", 不许只写结论。
 
 **门禁(2026-11-23 起)**
-- 扩展回归: `node test/run_all.js` → **59/59 PASS**(内含桥接 unit/exporters/smoke)
+- 扩展回归: `node test/run_all.js` → **60/60 PASS**(内含桥接 unit/exporters/doctor/smoke)
 - 桥接端到端: `node bridge/smoke.mjs` → **52 PASS / 0 FAIL**(任意 cwd)
 - 桥接单测: `node bridge/unit.mjs` → **71 PASS / 0 FAIL**; `node bridge/test-exporters.mjs` → **46 PASS / 0 FAIL**
 - 桥接自检: `node bridge/src/doctor.js` → **18/18 PASS**(需先起 daemon; 含监听地址/活体握手/协议与包版本一致性/归档目录/令牌权限)
@@ -27,6 +27,22 @@
   (实现改了、文档忘了改, 当轮就红)。补表行后绿。
 - smoke +1(52), `check_bridge_schema` 的"七个机读工具"断言同步更新
   (bridge_status/net_list/net_get/net_hosts/correlate/tab_list/chain_replay)。
+
+### R53: doctor 端到端(21 条) —— 排障承诺必须有运行时证据
+
+- **动机**: `doctor` 是"连不上时第一个该跑的东西", 它的检查项、顺序、文案都是**排障承诺**。
+  此前只有静态断言(字符串在文件里), 证明不了"运行时真查了、失败时真红、失败时还跑得完"。
+- **新增** `bridge/test-doctor.mjs`(真起 daemon, 只看 stdout 与退出码), 四场景 21 条:
+  1. **无 daemon** → 端口项 `[FAIL]` + 给出下一步, **其余检查仍跑完**(不是半路退出),
+     末尾有汇总; 且此时**不做活体握手**(不连坐出第二处红);
+  2. **有 daemon + 正确令牌** → 退出码 0, 端口/令牌/活体握手/协议一致/包版本一致/归档可写
+     六项逐个 PASS, 汇总 `doctor PASS: N/N`, 且有"归档保留期/归档体积"两行 INFO;
+  3. **有 daemon + 错令牌** → 退出码 1 且**恰好 1 项**红(令牌活体), 原因含 `unauthorized`
+     —— 端口/协议/版本不许被连坐;
+  4. **参数错误**(--port 0) → 退出码 2 + 一行明说"1..65535" + **不甩栈**。
+- **接入**: `test/run_all.js` 增加 `bridge-doctor` suite(60/60); `bridge/package.json`
+  的 `npm test` 聚合里加入; 文档计数闸门按设计先红(59→60), 同步后绿。
+- 顺带修: `run_all` 与 `check_doc_counts` 的 SKIP 提示原来只列 3 个桥接 suite, 补齐到 4 个。
 
 ### R52: net_list 字段过滤边界(9 条)+ 口径澄清
 

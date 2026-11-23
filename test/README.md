@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 59 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 60 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -58,6 +58,7 @@ node test/check_xxx.js        # 单跑一个
 
 | check_bridge_errors | 桥接错误语义契约: 线上 ERR.* 码 ↔ errors.js 文案表一一对应、每条错误必带"下一步"、渲染格式 `错误[code]: 原因`+换行+"下一步"、tools.js 不许回退旧形态(`fail("...")`/手写"错误: "前缀)、异常带 code 按码查表/裸异常退化仍给下一步(v1.1.7) | v1.1.7 |
 
+| bridge/test-doctor | doctor 端到端(真起 daemon 看输出与退出码, 不信源码字符串): 无 daemon → 端口项红且其余检查跑完 + 退出码 1;有 daemon+正确令牌 → 退出码 0 且端口/令牌/活体握手/协议/包版本/归档六项 PASS;有 daemon+错令牌 → **恰好 1 项**红(不连坐)+ 含 unauthorized;参数错误 → 退出码 2 一行明说不甩栈(v1.1.42) | v1.1.42 |
 | bridge/test-exporters | 导出口径单测(桥接层): pick 圈定语义/HAR 保真(不剔除静态·status=0·缺 duration→-1)/JMX·PY 压测口径(剔除静态/OPTIONS/SSE, 全噪音明确报错)/correlate 返回形态 + **单源证明**(猴补扩展 jmx.buildJmx / pyscript.buildPyScript / common.buildHar, bridge 输出必须立刻变)(v1.1.8) | v1.1.8 |
 
 | check_doc_counts | 文档计数/版本漂移闸门: README "共 N 个工具" ↔ 实现、文档间 .md 链接无断链、SECURITY.md 覆盖三道闸门等; 现算 suite 数(根 2+samples 1+test/ 发现+scan_conflicts+bridge 三层)并与 AGENTS/CLAUDE/test README/README/REVIEW 里的 "N 项/N/N/版本" 对拍, 不一致直接红(check_doc_counts 自身也算一个 suite)(v1.1.11) | v1.1.11 |
