@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 65 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 66 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -94,6 +94,8 @@ node test/check_xxx.js        # 单跑一个
 | check_tool_coverage | MCP 工具**行为级**覆盖闸门: 27 个工具必须每个都在 bridge/smoke.mjs 里被**真调过**(callTool/call/J 三种形态, 且不算注释与文档提及) —— 工具表只证明"存在", 这里证明"工具→协议→扩展三段通、参数没被吞";另断言 smoke 有 `--allow-control` 启动分支(控制类不是只测 forbidden)、调用的工具名无幻影;含自证(v1.1.47) | v1.1.47 |
 
 | check_user_journey | 用户旅程可用性(新人装完真的能用): manifest 必须有 commands(否则快捷键页是空的)且每条带 description;popup 五键齐;侧栏空态给"去配置";**popup 状态机按钮显隐行为级**(idle/recording/paused/未配置域名 四态, vm 跑真实 popup.js) —— 判据 style.display !== "none"(用 "" 表示显示)(v1.1.48) | v1.1.48 |
+
+| check_sample_evidence | 样本证据链闸门: 15 个样本目录必须都在 INDEX.md 被提及(headless-recorder 曾漏在索引树外)、sample.json 必填 source/entries 且条数与 loader 实载一致、meta.url 不指向真实内网域(保留域/RFC·开源文档域白名单)、含闸门自证(v1.1.49) | v1.1.49 |
 
 ## 维护约定
 

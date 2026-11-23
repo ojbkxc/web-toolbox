@@ -1,5 +1,16 @@
 # 更新记录
 
+## v1.1.49 — 样本证据链闸门
+
+- **实测缺口**: `opensource/headless-recorder` 样本目录**从未出现在 INDEX.md 的目录树里**
+  (它是 UI 范式参照样本, entries=0, 不进引擎回归 —— 所以也没被任何回归拉起提醒过);
+  另有样本的 `meta.url` 未脱敏核验。
+- **新增** `test/check_sample_evidence.js`(6 条): 每个样本目录必须在 INDEX 被提及、
+  `sample.json` 必填 source/entries 且条数与 loader 实载一致、meta.url 不指向真实内网域
+  (白名单: 保留域 + RFC/开源文档域)、两组闸门自证。
+- INDEX 补 `headless-recorder` 一行(注明 entries=0 不进引擎回归的角色);
+  `datatracker.ietf.org`(OAuth2 样本引 RFC 6749)进白名单。
+
 ## v1.1.48 — 用户旅程可用性(快捷键 + popup 状态机)
 
 - **补 manifest `commands`**: 之前 `chrome://extensions/shortcuts` 是**空的** —— 用户按快捷键没反应

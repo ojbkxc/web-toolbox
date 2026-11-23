@@ -46,6 +46,7 @@ samples/
     ├── form-flow/      表单体 diff 样本 (k6 html_form_post 形态)
     ├── git-apikey/     petstore UUID 动态值样本
     ├── httpbin-signed/ sign/nonce/timestamp 签名形态样本
+    ├── headless-recorder/ checkly/headless-recorder（UI 范式参照样本, entries=0, 不进引擎回归）
     ├── k6/             k6 官方认证样本
     ├── oreilly-eventsource/ SSE 端点样本（mime 主信号净化锚）
     ├── oauth2-authcode/ OAuth2 授权码流样本 (RFC 6749 §4.1)
