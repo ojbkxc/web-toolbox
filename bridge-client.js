@@ -278,12 +278,8 @@ async function bridgeDispatch(method, params) {
 
     // ---- 录制控制 ----
     case "rec.start": {
-      let tabId = params.tabId;
-      if (typeof tabId !== "number") {
-        const t = await bridgeActiveTab();
-        if (!t) throw new Error("找不到活动标签页");
-        tabId = t.id;
-      }
+      // 与页面类工具同一套解析(缺失→活动页, 非法→报错), 不静默改目标
+      const tabId = await bridgeResolveTabId(params.tabId);
       return await bridgeInvokeMessage({ type: "startRecording", tabId });
     }
     case "rec.stop":
@@ -539,11 +535,20 @@ async function bridgeActiveTab() {
   return t || null;
 }
 
+// tabId 解析: **缺失**(undefined/null) 才回落活动标签页; 显式给了但不合法必须报错。
+// 为什么(v1.1.72 实测): 此前 typeof !== "number" 一律回落 —— MCP 客户端传字符串 "5" 时,
+// 用户以为在录 tab 5, 实际录的是活动标签页, 数据全错且无任何提示。静默错目标比报错危险得多。
 async function bridgeResolveTabId(tabId) {
-  if (typeof tabId === "number") return tabId;
-  const t = await bridgeActiveTab();
-  if (!t) throw new Error("找不到活动标签页");
-  return t.id;
+  if (tabId === undefined || tabId === null) {
+    const t = await bridgeActiveTab();
+    if (!t) throw new Error("找不到活动标签页");
+    return t.id;
+  }
+  const n = typeof tabId === "number" ? tabId : Number(tabId);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error("tabId 必须是正整数(收到 " + JSON.stringify(tabId) + "); 省略该参数则用活动标签页");
+  }
+  return n;
 }
 
 // service worker 给自己发 runtime.sendMessage 收不到自己 —— 必须直接调 background 的监听器。

@@ -400,5 +400,21 @@ function extHello(extra = {}) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+
+// ---- tabId 解析语义(v1.1.72) ----
+// 此前 typeof !== "number" 一律回落活动标签页 —— MCP 客户端传字符串 "5" 时, 用户以为在录
+// tab 5, 实际录的是活动标签页(静默错目标)。现在: 缺失才回落, 非法值必报错。
+{
+  const bc = fs.readFileSync(new URL("../bridge-client.js", import.meta.url), "utf8");
+  ok(
+    "bridgeResolveTabId: 缺失才回落, 非法值报错(不静默改目标)",
+    /tabId === undefined \|\| tabId === null/.test(bc) && /Number\.isInteger\(n\)/.test(bc) && /tabId 必须是正整数/.test(bc),
+  );
+  ok(
+    "rec.start 复用同一解析(无自己的回退分支)",
+    /case "rec\.start"[\s\S]{0,240}bridgeResolveTabId\(params\.tabId\)/.test(bc),
+  );
+}
+
 console.log(`\n=== bridge unit: ${pass} PASS / ${fail} FAIL ===`);
 process.exit(fail ? 1 : 0);

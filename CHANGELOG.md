@@ -1,5 +1,19 @@
 # 更新记录
 
+## v1.1.72 — tabId 非法时静默改目标(AI 录错标签页)
+
+- **实测缺陷**: MCP 客户端调 `rec_start` **传字符串** `tabId: "5"` 时, 扩展侧
+  `bridgeResolveTabId` 的判定是 `typeof tabId !== "number" → 回落活动标签页` ——
+  用户以为在录 tab 5, **实际录的是活动标签页(实测 99)**, 数据全错且无任何提示。
+  探针证据: 修复前 background 收到 `{type:"startRecording",tabId:99}`, 修复后 `tabId:5`。
+- **为什么危险**: 静默改目标比报错危险得多 —— 用户拿到一整套错数据还以为是对的。
+- **修**: 语义改成"**缺失**(undefined/null) 才回落活动标签页; 显式给了但非法(非正整数)
+  必须报错并说明怎么改"; `rec.start` 与所有页面类工具(`bridgeResolveTabId`)共用同一套解析,
+  消除第二份回退逻辑。
+- **断言**: `bridge/unit.mjs` 补 2 条钉住该语义(缺失回落/非法报错 + rec.start 复用同一解析)。
+- **第三个同款教训**: unit.mjs 的 `ok` 是 `(name, cond, got)`, 与 smoke 的 `(cond, msg)` 相反 ——
+  我第三次写反(输出 "OK true")。**动任何 suite 的断言前先读该文件的 ok 定义**。
+
 ## v1.1.71 — 注释形态的 assert.<method>() 逃过放行检测
 
 - **注入矩阵(规则 2 续审)**: 11 种放行形态里检测面覆盖 7 种(注释 ok / .skip / .todo /
