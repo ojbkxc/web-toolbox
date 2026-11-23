@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 61 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 62 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -86,6 +86,8 @@ node test/check_xxx.js        # 单跑一个
 | check_ui_wiring | 页面 JS ↔ HTML 接线闸门(sidepanel/popup/options 三对): `$("literal")`/`getElementById("literal")` 的 id 必须存在于「HTML 静态 id ∪ JS 模板 id」(侧栏详情面板是 innerHTML 拼的);拼接形态(如 `$("pg"+tab)`)不参与判定以免误红;HTML id 不得重复;role=tab 的 aria-controls 必须指向真实面板;控件不得"既无引用也无内联事件"(v1.1.37) | v1.1.37 |
 
 | check_ai_egress | AI 外发路径单源闸门: 10 个 `build*Prompt` 全部在 aireport.js 且**每个内部都调清洗**(aiSanitizeEntry/scrubLong/scrubSensitiveKeys);每处 `callLlm` 的宿主函数必须经 `build*Prompt`(options 的 testLlm 是唯一白名单例外, 且自检"例外不接触录制数据");build*Prompt 不许在别处复制;skill.js 委托 aireport 且不自己再洗一遍(防双份规则漂移)(v1.1.43) | v1.1.43 |
+
+| check_no_internal_domains | 硬规则 4 的机器执行: 扫扩展运行时代码(根 js + 三页面 + manifest, 21 文件), 除 RFC 2606 保留域/产品自有域/扩展 API 命名空间外**不许出现真实或内网域名**;含**闸门自证**(真实域样例必须被判红、保留域必须放过)防"0 命中其实是正则失效"(v1.1.44) | v1.1.44 |
 
 ## 维护约定
 

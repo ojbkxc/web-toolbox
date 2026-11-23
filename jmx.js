@@ -369,7 +369,7 @@ function buildJmx(entries, opts = {}) {
   body.push(udf("loops", "${__P(loops,1)}"));
   body.push(udf("think", "${__P(think,500)}"));
   // 主机变量(v1.0.79): 值=录制 hostname, __P 形态与 threads/rampup/loops/think 统一
-  // —— 跨环境(UAT→PROD)三种切法: 改 UDF 值(GUI/文件) / -JHOST_1=prod.midea.com 命令行
+  // —— 跨环境(UAT→PROD)三种切法: 改 UDF 值(GUI/文件) / -JHOST_1=prod.example.com 命令行
   // 覆盖(__P 的价值, 不改文件) / JMeter GUI 直接改。hostname 无逗号, __P 默认值安全。
   for (const [h, varName] of hostMap) body.push(udf(varName, "${__P(" + varName + "," + xmlEsc(h) + ")}"));
   // CSV 数据驱动(v1.0.82): csvPath/csvFile 两 UDF 供 CSVDataSet 引用 —— 用户改文件路径

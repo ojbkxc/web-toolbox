@@ -76,6 +76,12 @@ web-toolbox 是一套**本机浏览器自动化工具**: Chrome 扩展负责录�
 - 不做加密存储: 令牌/归档是明文文件, 靠文件权限与用户目录 ACL 保护;
 - 不隐藏行为: 录制期间 Chrome 会显示「正在调试此浏览器」黄条, 这是 `chrome.debugger` 的固有提示。
 
+## 仓库里不出现真实域名(可验证)
+
+代码与文档里的示例域名一律用 RFC 2606 保留域(`example.com` 系); 唯一例外是产品自有服务域
+(`lxseek.com`, 选项页要告诉用户去哪买 Key)。`test/check_no_internal_domains.js` 扫扩展运行时代码
+并含**自证**(真实域样例必须判红) —— 这条硬规则不再只靠人记。
+
 ## 版本与最小权限
 
 - 扩展权限清单固定为 `cookies / storage / activeTab / scripting / debugger / tabs / alarms / sidePanel`,

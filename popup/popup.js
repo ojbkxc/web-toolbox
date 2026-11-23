@@ -11,7 +11,7 @@ let currentHost = null; // 当前 tab 的 hostname(refresh 判定用, onAddSite 
 let cachedDomains = []; // refresh 拉的域名清单快照(onAddSite 同步读, 不 await 保手势)
 
 // 域名覆盖判定: 与 background.js 引擎 matchDomain 同语义(host === d || host.endsWith("." + d))
-// —— popup realm 加载不到 background.js, 这里同款实现; 引擎认 "midea.com 覆盖 icsuat.midea.com",
+// —— popup realm 加载不到 background.js, 这里同款实现; 引擎认 "example.com 覆盖 icsuat.example.com",
 // popup 也必须认, 否则会出现"引擎录得上、popup 却藏按钮"的口径分叉。
 function hostCoveredBy(host, domains) {
   return (domains || []).some((d) => host === d || host.endsWith("." + d));

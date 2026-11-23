@@ -4,7 +4,7 @@
 目标: 持续评审并完善本仓库; 每轮必须"取证 → 修根因 → 回归 → 记录", 不许只写结论。
 
 **门禁(2026-11-23 起)**
-- 扩展回归: `node test/run_all.js` → **61/61 PASS**(内含桥接 unit/exporters/doctor/smoke)
+- 扩展回归: `node test/run_all.js` → **62/62 PASS**(内含桥接 unit/exporters/doctor/smoke)
 - 桥接端到端: `node bridge/smoke.mjs` → **52 PASS / 0 FAIL**(任意 cwd)
 - 桥接单测: `node bridge/unit.mjs` → **71 PASS / 0 FAIL**; `node bridge/test-exporters.mjs` → **46 PASS / 0 FAIL**
 - 桥接自检: `node bridge/src/doctor.js` → **18/18 PASS**(需先起 daemon; 含监听地址/活体握手/协议与包版本一致性/归档目录/令牌权限)
@@ -27,6 +27,19 @@
   (实现改了、文档忘了改, 当轮就红)。补表行后绿。
 - smoke +1(52), `check_bridge_schema` 的"七个机读工具"断言同步更新
   (bridge_status/net_list/net_get/net_hosts/correlate/tab_list/chain_replay)。
+
+### R55: 清掉三处注释里的真实客户域名 + 域名闸门(含自证)
+
+- **实测发现**(AGENTS 硬规则 4 "禁止把真实内网域名写进任何入库文件"): 三处**注释**里残留真实
+  客户域名 —— `sidepanel/sidepanel.js`(漏录示例)、`popup/popup.js`(域名覆盖示例)、
+  `jmx.js`(跨环境切法示例)。代码逻辑没用到, 但注释同样入库、同样会被人复制到别的文档里。
+- **修**: 换成 RFC 2606 保留域(`example.com` 系), 语义不变(仍是"父域覆盖子域"的示例)。
+- **新增** `test/check_no_internal_domains.js`: 扫扩展运行时代码(21 个文件), 三类白名单各自带理由 ——
+  保留域(RFC 2606/6761)、产品自有域(`lxseek.com`, 选项页要告诉用户去哪买 Key)、
+  以及扩展 API 命名空间误捕(`chrome.storage.local`)。
+- **闸门自证**: 另跑两组样例证明闸门有效 —— 真实域样例(midea 系、corp.internal)必须判红,
+  保留域/产品域/命名空间必须放过。只看"0 命中"不够: 正则写坏时也是 0 命中。
+- 范围说明: `samples/` 是脱敏样本库、`test/` 是测试数据, 由它们各自的规则管, 不在本闸门判。
 
 ### R54: AI 外发路径单源闸门(AGENTS 硬规则的机器执行)
 

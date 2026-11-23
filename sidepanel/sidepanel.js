@@ -283,7 +283,7 @@ $("btnClean").onclick = cleanVisible;
 
 // 部分漏录提示: 录到了一些(count>0)但有请求被域名过滤 → 列表上方黄色提示条。
 // 之前只在 count===0(空列表)时才显示 unmatchedHosts, count>0 时用户完全不知道
-// 有请求被过滤掉(典型: 配了 ics.midea.com 录到查询, 但登录走 signin.midea.com 漏录)。
+// 有请求被过滤掉(典型: 配了 ics.example.com 录到查询, 但登录走 signin.example.com 漏录)。
 function updateUnmatchedHint(info) {
   const el = $("unmatchedHint");
   if (!el) return;
