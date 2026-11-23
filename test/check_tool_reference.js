@@ -54,6 +54,13 @@ if (fs.existsSync(gen) && fs.existsSync(target)) {
     const sameS = Buffer.compare(origS, nowS) === 0;
     if (sameS) {
       ok("skills.md 与 skill.js 同步(生成器产物逐字节一致)", true, "n/a");
+      // 逐字节一致只证明"两边同源", 证明不了"抽取完整" —— R79 实证: 生成器用 [a-z_]+ 漏掉
+      // 驼峰名 diffTriage, 产物 9 行却与入库文件一致(双侧同漏 = 闸门盲区)。这里独立数源侧
+      // 条目数, 与产物表行数比对。
+      const skillSrc = fs.readFileSync(path.join(ROOT, "skill.js"), "utf8");
+      const srcCount = [...skillSrc.matchAll(/name:\s*"[\w-]+"/g)].length;
+      const docCount = (fs.readFileSync(targetS, "utf8").match(/^\| `[\w-]+` \|/gm) || []).length;
+      ok("skills.md 行数 = skill.js 条目数(防抽取被正则漏掉)", srcCount === docCount, { srcCount, docCount });
     } else {
       fs.writeFileSync(targetS, origS);
       ok("skills.md 与 skill.js 同步", false, { hint: "重跑 node bridge/gen-skills-doc.cjs" });

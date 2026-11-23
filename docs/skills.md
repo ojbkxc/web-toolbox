@@ -14,6 +14,7 @@
 | `doc` | 接口文档: OpenAPI 风格, 贴 wiki |
 | `assert` | 断言生成: 接口成败判定规则 |
 | `perf` | 冒烟解读: 判瓶颈, 给调优建议 |
+| `diffTriage` | 契约判定: DIFF 是噪音还是真破坏 |
 | `inventory` | 接口清单: Markdown 表格 |
 | `sensitive` | 敏感扫描: 查 token/密码/隐私泄漏 |
 | `session` | 会话回填: 找登录特征, 反哺识别规则 |

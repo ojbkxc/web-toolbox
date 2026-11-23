@@ -6,7 +6,7 @@ const path = require("path");
 const ROOT = path.resolve(__dirname, "..");
 
 const src = fs.readFileSync(path.join(ROOT, "skill.js"), "utf8");
-const skills = [...src.matchAll(/name:\s*"([a-z_]+)"[^}]*desc\w*:\s*"([^"]+)"/g)].map((m) => ({ name: m[1], desc: m[2] }));
+const skills = [...src.matchAll(/name:\s*"([\w-]+)"[^}]*desc\w*:\s*"([^"]+)"/g)].map((m) => ({ name: m[1], desc: m[2] }));
 
 const L = [];
 L.push("# AI 技能参考(Skills)");
