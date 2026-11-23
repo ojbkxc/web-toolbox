@@ -1,5 +1,16 @@
 # 更新记录
 
+## v1.1.58 — docs/tool-reference.md(生成式工具参考)
+
+- **动机**: 参考仓库有独立的 tool-reference 文档(按类别/逐工具/参数表); 本仓库的参数信息
+  只在 bridge/README 的工具表里一笔带过。手写第二份必然漂移(R9 工具表漏三行的同款教训)。
+- **做法**: 新增 `bridge/gen-tool-reference.cjs`(生成器, 从 tools.js 抽 name/title/描述/
+  参数+describe/注解/结构化标记, 按七层分组) → 生成 `docs/tool-reference.md`(294 行,
+  20 张参数表); 新增 `check_tool_reference` 闸门: **重生成后逐字节比对**, 手改即红,
+  并在失败信息里给前三行 diff 与重跑命令。
+- README 的"深入文档"入口表加一行(标明"生成式")。
+- 生成器说明写在文档头部: "不要手改"。
+
 ## v1.1.57 — 性能基线(先量后断)
 
 - **动机**: R15 曾给 net_list 设 <1000ms 断言, 全量套件并发时被机器抖动打红(R26 记录);
