@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 77 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 78 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -118,6 +118,8 @@ node test/check_xxx.js        # 单跑一个
 | check_entry_health | **入口健康(秒级)**: 23 个运行时文件语法 + 真 spawn MCP 入口喂 initialize(抓 ReferenceError 类回归, 语法过≠能启动) + doctor --help 不挂住 + 扩展 6 个入口在 vm 可加载; 负向验证过(注入未定义变量 → 红)(v1.1.80) | v1.1.80 |
 
 | check_rule_gate_map | **规则-闸门映射**(数据文件 `rule-gate-map.json` + 本闸门): AGENTS §1 每条 Never 必须登记"由哪些闸门管 + 负向验证方式"; 校验规则数一致/闸门文件真实存在且含断言/负向记录非空; 三组负向验证过(v1.1.88) | v1.1.88 |
+
+| check_assert_count | **断言数量守恒**(基线 `assert-counts.json`, 当前 1810 条 / 72 suite): 任何 suite 的断言数少于基线即红(删断言必须显式改基线, 在 review 里可见); 基线登记的文件必须仍存在(防整文件删除); 新增断言不拦; 三组负向验证过(v1.1.92) | v1.1.92 |
 
 ## 维护约定
 
