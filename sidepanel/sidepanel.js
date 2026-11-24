@@ -553,6 +553,21 @@ function updateCsvUi() {
   }
 }
 
+// 起点裁剪**是否真会生效** —— 单点判定(此前三处各写一套, 口径会漂):
+//   · optTrim 关 → 不裁(用户主动关掉开关);
+//   · 勾选模式下选中项不在勾选集内 → 不裁(导出集里没有起点, slice 无从开始);
+//   · 其余情况(有选中 + 开关开 + 起点在导出集内) → 裁。
+// 返回 { active, reason } —— reason 供 UI 直接展示, 避免文案与判定分家。
+function trimState(selected, exportList) {
+  const off = !!$("optTrim") && !$("optTrim").checked;
+  const list = exportList || [];
+  const inExport = !!selected && list.some((x) => x.id === selected.id);
+  if (!selected) return { active: false, reason: "no-selection" };
+  if (off) return { active: false, reason: "switch-off" };
+  if (!inExport) return { active: false, reason: "outside-export" };
+  return { active: true, reason: "active" };
+}
+
 // 起点裁剪提示: 选中一条时显示 trimHint(从这条开始导), 取消选中隐藏
 function updateTrimUi() {
   const el = $("trimHint");
@@ -567,10 +582,10 @@ function updateTrimUi() {
     //    静默不裁(免得用户勾了 {a,c} 却选着 b 时疑惑"起点怎么没生效")。
     // off 优先于 pick 注: 开关关时"任何勾选形态都不裁"是终态结论(修开关是唯一出路),
     // 双提示叠加只会稀释行动指引, 不并列。
-    const off = $("optTrim") && !$("optTrim").checked
-      ? " (注意: 起点开关已关闭, 本次导出不会裁剪)" : "";
-    const note = off || (pickMode && pickIds.size && !pickIds.has(selectedId)
-      ? " (注意: 该起点不在勾选集内, 导出时不会裁剪)" : "");
+    const st = trimState(e, exportSet());
+    const note = st.reason === "switch-off" ? " (注意: 起点开关已关闭, 本次导出不会裁剪)"
+      : st.reason === "outside-export" ? " (注意: 该起点不在勾选集内, 导出时不会裁剪)"
+      : "";
     const noteEl = $("trimNote");
     if (noteEl) noteEl.textContent = note;
   }
@@ -629,9 +644,11 @@ function renderDetail() {
   // 按钮态反映"裁剪真会生效"(选中 + optTrim 开 + 起点在导出集内)——与 updateTrimUi 的
   // trimNote 同一套判定: ① optTrim 关 → 普通态(点了就开); ② 勾选模式下起点不在勾选集内 →
   // pri 高亮是假象(实际不裁), title 警示与 trimNote 同文案, 避免按钮态与真实效果背离。
-  const trimOff = !!$("optTrim") && !$("optTrim").checked;
-  const trimOutsidePick = pickMode && pickIds.size && !pickIds.has(selectedId);
-  const isTrimActive = !!e && !trimOff && !trimOutsidePick;
+  // 与 updateTrimUi / 导出路径同源: 单点 trimState 判定, 不各写一套
+  const trimSt = trimState(e, exportSet());
+  const isTrimActive = trimSt.active;
+  const trimOutsidePick = trimSt.reason === "outside-export";
+  const trimOff = trimSt.reason === "switch-off";
 
   detail.innerHTML = `
     <div class="kv"><h4 id="kv-url">URL</h4><pre aria-labelledby="kv-url">${escHtml(e.url)}</pre></div>
@@ -1451,11 +1468,14 @@ $("btnSave").onclick = async () => {
   if (!entries.length) { setStatus("没有录制数据", "err"); return; }
   const vis = exportSet(); // 导出集: 勾选优先, 否则可见集
   if (!vis.length) { setStatus("导出集为空(没勾条目? 过滤词全滤掉?)", "err"); return; }
-  // 起点裁剪: 选中了一条且勾了 optTrim → 裁掉它之前的条目(录整段但只导业务段)
+  // 起点裁剪: 与 UI 提示同源判定(trimState), 避免"提示说裁/实际不裁"或反之
   let outSet = vis;
-  if (selectedId && $("optTrim") && $("optTrim").checked) {
-    const idx = vis.findIndex((e) => e.id === selectedId);
-    if (idx > 0) outSet = vis.slice(idx);
+  {
+    const sel = entries.find((x) => x.id === selectedId) || null;
+    if (trimState(sel, vis).active) {
+      const idx = vis.findIndex((x) => x.id === selectedId);
+      if (idx > 0) outSet = vis.slice(idx);
+    }
   }
   const out = [];
   const errs = [];
