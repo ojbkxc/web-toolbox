@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 79 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 80 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -122,6 +122,8 @@ node test/check_xxx.js        # 单跑一个
 | check_assert_count | **断言数量守恒**(基线 `assert-counts.json`, 当前 1810 条 / 72 suite): 任何 suite 的断言数少于基线即红(删断言必须显式改基线, 在 review 里可见); 基线登记的文件必须仍存在(防整文件删除); 新增断言不拦; 三组负向验证过(v1.1.92) | v1.1.92 |
 
 | check_dom_escape | **扩展页面 DOM 注入面**: innerHTML 插值里不得出现裸远程字段(method/url/headers/AI 输出的 type 等); 判据精确到形态(转义/白名单包装/数字字段/纯计数/已构造片段/字面量三元都放行), 含 8 组自证 + escHtml 五字符覆盖; 负向验证过(回退任一处转义立刻红)(v1.1.96) | v1.1.96 |
+
+| bridge/test-jmx-parse | **真实消费方解析**(本机有 java 才跑, 否则 SKIP 不伪装): 用 JDK 自带 XML 解析器(DocumentBuilder, 与 JMeter 同生态)真实解析导出物 —— 正常产物 / 含控制字符的原始数据 / XML 特殊字符全覆盖; 并强校验**手写 checkXml 与真实解析器判断一致**(不一致=手写判定有盲区)。负向验证过: 去掉 & 转义或控制字符剥离立刻红(v1.1.98) | v1.1.98 |
 
 ## 维护约定
 

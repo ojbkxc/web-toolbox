@@ -26,7 +26,12 @@ const RESERVED = new Set([
 ]);
 const RESERVED_SUFFIX = [".invalid", ".test", ".example", ".localhost"];
 const PRODUCT = new Set(["lxseek.com"]);
+// 规范/文档域: 出现在标准 feature 名里的公开域名(如 XML 解析器的 apache.org feature URL),
+// 不是我们的业务域, 也不指向任何内网 —— 与 ietf.org 同族(R62 先例)。
+const SPEC_DOMAIN = new Set(["apache.org", "w3.org", "xml.org", "json-schema.org"]);
 const NOT_DOMAIN = new Set(["chrome.storage.local", "chrome.storage.sync", "document.cookie.secure"]);
+// Java 包名不是主机名(形如 java.io / javax.xml): 正则会把它们当域名, 这里统一排除。
+const PKG_PREFIX = /^(java|javax|jakarta|org\.w3c|com\.sun|jdk)\./i;
 
 const TLD = "com|cn|net|org|io|local|internal|corp|lan|top|xyz|cloud|site|dev|app";
 const RE = new RegExp(`\\b((?:[a-z0-9][a-z0-9-]{1,30}\\.)+(?:${TLD}))\\b`, "gi");
@@ -52,6 +57,8 @@ const allowed = (host) => {
   // 允许保留域的子域(ics.example.com / prod.example.com 这类示例)
   for (const r of RESERVED) if (host.endsWith("." + r)) return true;
   for (const p of PRODUCT) if (host === p || host.endsWith("." + p)) return true;
+  for (const d of SPEC_DOMAIN) if (host === d || host.endsWith("." + d)) return true;
+  if (PKG_PREFIX.test(host)) return true;   // Java 包名形态
   // 标签级判据: 域名任一段是保留词即假域名(api.test.com.cn 里的 "test" 与 .test 同义)。
   // 为什么必须按标签判: 只按后缀判会把 "xxx.test.com.cn" 当真实域 —— 那是测试里常见写法。
   const labels = host.split(".");
