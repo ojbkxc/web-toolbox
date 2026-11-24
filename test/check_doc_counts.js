@@ -214,5 +214,26 @@ ok("三份文档无残留的其它\"N 项\"计数", stale.length === 0, stale);
     console.log("  ℹ 无 tag(未发过版, 跳过 tag 校验)");
   }
 }
+// ---- REVIEW 结构健康(v1.2.6) ----
+// 实测损坏(v1.2.5 之后发现, 由 R66 的归档压缩脚本引入): 「### 下一轮候选」整段被揉进
+// `- R11` 索引行的**行尾**, 读起来像乱码; 而它是跨轮交接面(记录哪些决策在等用户批准)。
+// 同一次事故里我还把 REVIEW 打碎过一次(把字符串 spread 成单个字符), 所以连同"打碎特征"一起钉。
+{
+  const review = read("REVIEW.md");
+  const rl = review.split(/\r?\n/);
+
+  // ① 打碎特征: 连续 >=5 行都是单字符
+  let run = 0, maxRun = 0;
+  for (const line of rl) { if (line.length === 1) { run++; if (run > maxRun) maxRun = run; } else run = 0; }
+  ok(`REVIEW 没有被打碎(最长连续单字符行 ${maxRun} < 5)`, maxRun < 5, maxRun);
+
+  // ② 标题不得挂在 `- R` 索引行尾(R66 压缩的形态特征)
+  const glued = rl.filter((l) => /^- R\d+/.test(l) && l.includes("### "));
+  ok("REVIEW 的 `- R` 索引行尾没有粘着标题", glued.length === 0, glued.slice(0, 2));
+
+  // ③ 跨轮交接面必须存在
+  ok("REVIEW 有「下一轮候选」小节", rl.some((l) => l === "## 下一轮候选"), "缺该小节");
+}
+
 console.log(fails ? `=== doc counts FAIL: ${fails} ===` : `=== doc counts PASS (${expected} suites, v${version}) ===`);
 process.exit(fails ? 1 : 0);
