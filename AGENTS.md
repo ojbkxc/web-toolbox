@@ -10,7 +10,7 @@
 零业务逻辑、只产出数据；目标域名完全可配置（`optional_host_permissions`，不配域名对任何站点无权工作）。
 
 - **仓库**：https://github.com/ojbkxc/web-toolbox（main 分支，直接 push，不走 PR）
-- **形态**：`manifest.json` v3，版本号在 manifest `"version"`（当前 1.1.93）
+- **形态**：`manifest.json` v3，版本号在 manifest `"version"`（当前 1.1.94）
 - **入口文件**：
   - `background.js` — service worker，录制引擎（chrome.debugger attach/网络事件/环形诊断日志）
   - `sidepanel/` — 工作台（查看/过滤/重放/关联/导出/AI 全在侧栏）
@@ -94,7 +94,10 @@
 2. `CHANGELOG.md` 顶部新增 `## vX.Y.Z — 标题` 段(写根因与证据, 不写"已完成");
 3. `git tag -a vX.Y.Z` 并推送, 再创建 GitHub Release(标题/正文取 CHANGELOG)。
 
-- 校验:`node test/check_doc_counts.js` 断言 manifest ↔ CHANGELOG 同版本; tag 名 = `v` + version。
+- 校验:`node test/check_doc_counts.js` 断言 manifest ↔ CHANGELOG 同版本; tag 名形态 `vX.Y.Z`、
+  最新 tag **不得高于** manifest、版本号不重复。
+  **开发态允许 manifest 领先最新 tag**(逐轮递增是正常的, 发版才打 tag) —— 闸门会打印提示,
+  不算违规; 反过来 tag 高于 manifest 一定是错的(发了个代码里不存在的版本)。
 - 创建 Release 时**不要传 `target_commitish`** —— tag 已存在时 GitHub 会以 422
   `invalid target_commitish` 拒绝(与是否匹配无关), 这是踩过的坑。
 - 仓库无 Actions, 等价门禁是 `node test/run_all.js` 全绿(见 §2)。

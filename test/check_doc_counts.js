@@ -179,5 +179,40 @@ ok("三份文档无残留的其它\"N 项\"计数", stale.length === 0, stale);
   ok(`doctor 实际检查数 >= 18(静态 ${calls - defs} 处 check 调用)`, calls - defs >= 18, calls - defs);
 }
 
+// ---- 4b 发布协议的 tag 面(v1.1.94) ----
+// AGENTS §4b 写着"校验: check_doc_counts 断言 manifest ↔ CHANGELOG 同版本; tag 名 = v+version"
+// —— 但本文件此前**完全没有 tag 校验**(实测: tag 停在 v1.1.47, manifest 已到 1.1.93, 全绿)。
+// 处置: 不要求每次 bump 都打 tag(开发态逐次递增是正常的, 发版才打 tag), 只钉三条硬约束:
+//   ①tag 名必须是 vX.Y.Z 形态; ②最新 tag **不得高于** manifest 版本(高于=发了个不存在于代码的版本);
+//   ③tag 集合里不得出现重复的版本号。
+{
+  const { execSync } = require("child_process");
+  let tags = [];
+  try { tags = execSync("git tag --list", { cwd: ROOT, encoding: "utf8", timeout: 8000 })
+    .split(/\r?\n/).map((x) => x.trim()).filter(Boolean); } catch { tags = []; }
+  const parse = (t) => t.replace(/^v/, "").split(".").map(Number);
+  const cmp = (a, b) => { const pa = parse(a), pb = parse(b); for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0); return 0; };
+
+  if (tags.length) {
+    const badName = tags.filter((t) => !/^v\d+\.\d+\.\d+$/.test(t));
+    ok("tag 名形态统一为 vX.Y.Z", badName.length === 0, badName);
+
+    const sorted = [...tags].sort(cmp);
+    const latest = sorted[sorted.length - 1];
+    const vNow = "v" + version;
+    ok(`最新 tag 不高于 manifest(${latest} <= ${vNow})`, cmp(latest, vNow) <= 0, { latest, manifest: vNow });
+
+    const seen = new Map();
+    const dup = [];
+    for (const t of tags) { const k = parse(t).join("."); if (seen.has(k)) dup.push(k); seen.set(k, true); }
+    ok("tag 集合没有重复版本号", dup.length === 0, dup);
+
+    if (latest !== vNow) {
+      console.log(`  ℹ 开发态: manifest v${version} 领先最新 tag ${latest}(发版时才打 tag, 属正常)`);
+    }
+  } else {
+    console.log("  ℹ 无 tag(未发过版, 跳过 tag 校验)");
+  }
+}
 console.log(fails ? `=== doc counts FAIL: ${fails} ===` : `=== doc counts PASS (${expected} suites, v${version}) ===`);
 process.exit(fails ? 1 : 0);
