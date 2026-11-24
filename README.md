@@ -295,23 +295,45 @@
 
 ```
 web-toolbox/
-├── manifest.json          MV3, optional_host_permissions
-├── background.js          录制引擎(chrome.debugger Network)+ 保活 + 状态徽章
+├── manifest.json          MV3, optional_host_permissions, commands(快捷键)
+│
+├── 【录制引擎】
+├── background.js          Network 监听 + 保活 + 状态徽章 + 诊断环形缓冲
+├── auth.js                登录前置识别(规则表 + 前缀连续命中)
+├── correlate.js           自动关联(diff + 规则分类)
 ├── common.js              存储/授权/下载/JSONL/LLM 调用(callLlm) 公共函数
-├── auth.js                登录前置识别引擎(规则表 + 前缀连续命中策略)
-├── correlate.js           自动关联引擎(纯离线 diff + 规则分类)
-├── replay.js              链路重放引擎(串行重放 + 归一化 diff)
-├── aic.js                 AI 依赖链注入引擎(applyAiChain 单源: 页面 script 与测试 require 同一文件)
-├── jmx.js                 JMeter .jmx 生成器(参照 gen_ktki_perf_jmx.py 权威格式)
-├── pyscript.js            Python requests 脚本生成器(纯规则零幻觉)
-├── aireport.js            AI 报告/诊断 prompt 构造 + 数据卫生(脱敏截断)
-├── skill.js               内置 AI 技能注册表(10 个: 基础 5 + 高阶 5)
-├── popup/                 极简启动器(状态徽章 + 录制控制 + 打开侧栏)
-├── sidepanel/             三页工作台(录制列表+详情 / 导出格式 / Cookie 桥)
-├── options/               域名白名单 + AI 接口配置页
-├── docs/                  对外文档(mcp-clients 接入指南 / troubleshooting 排障)
-├── test/                  e2e 走查回归集(42 check_* + 3 e2e_* + scan_conflicts + run_all.js 一键全量 84 项)
-└── icons/
+│
+├── 【导出与重放】
+├── jmx.js                 JMeter .jmx 生成(含 hashTree 结构 + 长 query 参数化)
+├── pyscript.js            Python requests 脚本生成(纯规则零幻觉)
+├── replay.js              链路重放(串行 + 归一化 diff + 断言判定)
+├── aic.js                 AI 依赖链注入(applyAiChain 单源)
+│
+├── 【AI】
+├── aireport.js            报告/诊断 prompt 构造 + 数据卫生(脱敏截断)
+├── skill.js               内置 AI 技能注册表
+│
+├── 【桥接(MCP)】
+├── bridge-client.js       扩展侧适配层(WebSocket + 命令分发)
+├── bridge-protocol.js     协议常量(两端共用同一份)
+├── bridge/                Node 桥接进程: daemon + MCP server + 自检 + 套件
+│
+├── 【界面】
+├── popup/                 极简启动器(状态 + 录制控制 + 开侧栏)
+├── sidepanel/             三页工作台(录制列表+详情 / 导出 / Cookie 桥)
+├── options/               域名白名单 + AI 接口 + 桥接配置
+├── icons/
+│
+├── 【测试】
+├── test/                  e2e 走查回归集(一键全量 85 项; 清单与逐项说明见 test/README.md)
+├── test_regression.js     引擎级回归(时间序/裁剪/导出全链)
+├── mock_bg_test.js        引擎 mock 场景
+│
+├── 【样本与文档】
+├── samples/               通用性证据样本库(索引见 samples/INDEX.md)
+├── docs/                  对外文档(mcp-clients / troubleshooting / tool-reference / skills)
+├── README.md  SECURITY.md  AGENTS.md  CHANGELOG.md  REVIEW.md
+└── Workspace_F60DAB.md    项目档案(核心验证方式/维护规则)
 ```
 
 ## 已知边界
