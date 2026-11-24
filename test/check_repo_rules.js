@@ -98,7 +98,15 @@ ok("process.exit(0) 只在文件末尾", earlyExit.length === 0, earlyExit);
   ok("起测试服务的套件都探测空闲端口", bad.length === 0, bad);
 }
 
-// ---------- D:// ---------- D:// ---------- D: git add -A ----------
+// ---------- C4: 全量入口的失败诊断必须直接给出失败行 ----------
+// 实证(R97): 原来只打输出末 3 行, 而断言失败行常在中间 —— 为看"哪条红"要多跑好几次全量。
+{
+  const ra = fs.readFileSync(path.join(ROOT, "test", "run_all.js"), "utf8");
+  ok("run_all 失败时优先打印 FAIL/✗ 行(不只是末 3 行)",
+    /badLines\s*=\s*lines\.filter/.test(ra) && /FAIL\|✗/.test(ra), "仍是末 3 行模式");
+}
+
+// ---------- D:// ---------- D:// ---------- D:// ---------- D: git add -A ----------
 const docs = [];
 (function walk(d) {
   for (const ent of fs.readdirSync(d, { withFileTypes: true })) {

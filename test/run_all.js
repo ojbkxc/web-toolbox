@@ -48,9 +48,21 @@ for (const s of suites) {
   } else {
     failed.push(s.name);
     console.log(`  FAIL ${s.name} (exit ${r.status}, ${ms}ms)`);
-    const tail = (r.stdout || "").split("\n").filter(Boolean).slice(-3);
-    for (const l of tail) console.log("    | " + l);
-    if (r.stderr) console.log("    ! " + r.stderr.split("\n")[0]);
+    // 失败诊断: 先打"失败行"本身(断言红的那几行), 再补末几行上下文。
+    // 为什么改: 原来只打末 3 行, 而断言失败行常在中间 —— 定位一条红要点开整个输出
+    // (R96 实测: 为了看"哪条断言红"多跑了好几次全量)。
+    const lines = (r.stdout || "").split("\n").filter(Boolean);
+    const badLines = lines.filter((l) => /FAIL|✗|错误\[|Error:/.test(l)).slice(0, 8);
+    if (badLines.length) {
+      for (const l of badLines) console.log("    ✗ " + l.trim().slice(0, 200));
+    } else {
+      for (const l of lines.slice(-3)) console.log("    | " + l);
+    }
+    // stderr 里也优先找真正的错误行(而不是永远第一行)
+    if (r.stderr) {
+      const el = r.stderr.split("\n").filter(Boolean).filter((l) => /Error|错误|at /.test(l)).slice(0, 3);
+      for (const l of el.length ? el : [r.stderr.split("\n")[0]]) console.log("    ! " + l.trim().slice(0, 200));
+    }
   }
 }
 
