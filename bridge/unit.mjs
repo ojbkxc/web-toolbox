@@ -467,5 +467,19 @@ function extHello(extra = {}) {
   ok("bridge_status 暴露 archive 状态", /archive: typeof ctx\.archive\?\.stats/.test(toolsSrc))
 }
 
+
+// ---- 请求 id 唯一性(v1.1.86) ----
+// id 是 hub/index 两处 pending 表的 key —— 碰撞会 set() 覆盖前一个 promise, 那个请求永远
+// 等不到结果(静默挂起, 比报错更难查)。所以 makeId 必须单调不重复, 不只是"概率很低"。
+{
+  const p2 = (await import("../bridge-protocol.js")).default;
+  const seen = new Set();
+  for (let i = 0; i < 50000; i++) seen.add(p2.makeId("q"));
+  ok("makeId 生成 5 万个不重复(单进程内绝对唯一)", seen.size === 50000, seen.size);
+  const ids = [];
+  for (let i = 0; i < 5; i++) ids.push(p2.makeId("q"));
+  ok("makeId 形如 q<时间戳>-<自增序><随机>", ids.every((x) => /^q[a-z0-9]+-[a-z0-9]+$/.test(x)), ids);
+}
+
 console.log(`\n=== bridge unit: ${pass} PASS / ${fail} FAIL ===`);
 process.exit(fail ? 1 : 0);

@@ -72,9 +72,15 @@
   function isReadMethod(m) { return READ_METHODS.includes(m); }
   function isControlMethod(m) { return CONTROL_METHODS.includes(m); }
 
-  // 请求 id: 时间戳 + 随机后缀, 单进程内不会撞
+  // 请求 id: 时间戳 + **单调自增序** + 短随机。
+  // 为什么不用纯随机后缀: id 是 pending 表的 key —— 一旦碰撞, set() 会静默覆盖前一个
+  // promise, 那个请求永远等不到结果(挂起比报错更难查)。自增序在单进程内绝对不重复,
+  // 与时间戳组合后跨进程重启也不会复用。
+  let idSeq = 0;
   function makeId(prefix) {
-    return (prefix || "q") + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    idSeq = (idSeq + 1) % 1e9;
+    return (prefix || "q") + Date.now().toString(36) + "-" + idSeq.toString(36)
+      + Math.random().toString(36).slice(2, 5);
   }
 
   // 线协议一律 JSON 文本帧; 这个守卫让"收到了非对象帧"在两端表现一致
