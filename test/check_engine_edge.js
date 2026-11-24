@@ -384,7 +384,49 @@ const ids = () => (harvest()?.entries || []).map((e) => e.id);
     ok(st && (st.unmatched || []).some((x) => /other\.example\.net/.test(x)), "9f 未授权域计入 unmatchedHosts(诊断可见): " + JSON.stringify(st && st.unmatched));
     await msg("stopRecording");
   }
-  await msg("stopRecording");
+  await msg("stopRecording");
+  // ---- 10) 极端但合法的输入: 不丢条目(全录不变量的边界面) ----
+  // 实测前提: 16KB 单 header / 100 header / 8KB URL / 3-MB 单条响应 —— 引擎全部入库,
+  // 响应体按上限截断但条目在。此前这条边界零覆盖, 谁改坏了都看不出来。
+  // 自足: 自己起录制、自己收尾 —— 不依赖前面场景留下的状态(第一版插在 stopRecording
+  // 之后, 结果 0 条入库, 断言当场红出来)。
+  {
+    mem["toolbox.harvest"] = { v: 1, entries: [] };
+    await msg("setDomains", { domains: ["app.test.com"] });
+    await msg("startRecording", { tabId: 123 });
+    const before = (mem["toolbox.harvest"].entries || []).length;
+    // 16KB 单 header
+    fire("Network.requestWillBeSent", { requestId: "x1", timestamp: 10, request: { url: "https://app.test.com/h1", method: "GET", headers: { "x-big": "A".repeat(16384) } } });
+    fire("Network.responseReceived", { requestId: "x1", response: { status: 200, mimeType: "text/plain" } });
+    fire("Network.loadingFinished", { requestId: "x1", timestamp: 10.1 });
+    // 100 个 header
+    const many = {}; for (let i = 0; i < 100; i++) many["h" + i] = "v" + i;
+    fire("Network.requestWillBeSent", { requestId: "x2", timestamp: 11, request: { url: "https://app.test.com/h2", method: "GET", headers: many } });
+    fire("Network.responseReceived", { requestId: "x2", response: { status: 200, mimeType: "text/plain" } });
+    fire("Network.loadingFinished", { requestId: "x2", timestamp: 11.1 });
+    // 8KB URL
+    fire("Network.requestWillBeSent", { requestId: "x3", timestamp: 12, request: { url: "https://app.test.com/" + "p".repeat(8000), method: "GET", headers: {} } });
+    fire("Network.responseReceived", { requestId: "x3", response: { status: 200, mimeType: "text/plain" } });
+    fire("Network.loadingFinished", { requestId: "x3", timestamp: 12.1 });
+    // 3MB 单条响应(超 200KB 上限)
+    global.__respBodies["x4"] = "Y".repeat(3 * 1024 * 1024);
+    fire("Network.requestWillBeSent", { requestId: "x4", timestamp: 13, request: { url: "https://app.test.com/huge", method: "GET", headers: {} } });
+    fire("Network.responseReceived", { requestId: "x4", response: { status: 200, mimeType: "text/plain" } });
+    fire("Network.loadingFinished", { requestId: "x4", timestamp: 13.1 });
+    await sleep(120);
+    const es9 = (mem["toolbox.harvest"] || {}).entries || [];
+    ok(es9.length === before + 4, `10. 极端输入四条全部入库(${before} → ${es9.length})`);
+    const e1 = es9.find((e) => e.path === "/h1");
+    ok(!!e1 && (e1.headers["x-big"] || "").length === 16384, "10. 16KB 单 header 原样保留");
+    const e2 = es9.find((e) => e.path === "/h2");
+    ok(!!e2 && Object.keys(e2.headers || {}).length === 100, "10. 100 个 header 全部保留");
+    const e3 = es9.find((e) => e.path.length > 8000);
+    ok(!!e3, "10. 8KB URL 条目在");
+    const e4 = es9.find((e) => e.path === "/huge");
+    ok(!!e4 && e4.response.length === 200000, `10. 3MB 响应截断到 200000 但条目在(${e4 ? e4.response.length : "缺"})`);
+    await msg("stopRecording");
+  }
+
   console.log(fail ? `\n=== 引擎边界 FAIL: ${fail} ===` : `\n=== 引擎边界走查 PASS ===`);
   process.exit(fail ? 1 : 0);
 })();
