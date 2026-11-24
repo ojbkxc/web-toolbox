@@ -310,7 +310,7 @@ web-toolbox/
 ├── sidepanel/             三页工作台(录制列表+详情 / 导出格式 / Cookie 桥)
 ├── options/               域名白名单 + AI 接口配置页
 ├── docs/                  对外文档(mcp-clients 接入指南 / troubleshooting 排障)
-├── test/                  e2e 走查回归集(42 check_* + 3 e2e_* + scan_conflicts + run_all.js 一键全量 81 项)
+├── test/                  e2e 走查回归集(42 check_* + 3 e2e_* + scan_conflicts + run_all.js 一键全量 82 项)
 └── icons/
 ```
 

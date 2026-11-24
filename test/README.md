@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 81 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 82 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -126,6 +126,8 @@ node test/check_xxx.js        # 单跑一个
 | bridge/test-jmx-parse | **真实消费方解析**(本机有 java 才跑, 否则 SKIP 不伪装): 用 JDK 自带 XML 解析器(DocumentBuilder, 与 JMeter 同生态)真实解析导出物 —— 正常产物 / 含控制字符的原始数据 / XML 特殊字符全覆盖; 并强校验**手写 checkXml 与真实解析器判断一致**(不一致=手写判定有盲区)。负向验证过: 去掉 & 转义或控制字符剥离立刻红(v1.1.98) | v1.1.98 |
 
 | bridge/test-py-run | **PY 导出物真实运行**(本机有 python 才跑, 否则 SKIP): 默认导出必须启动到"发请求"这一步(不因 base_url 为 None 而 TypeError)、失败原因必须是网络层、改 main 的 base_url 后仍能跑、step 用 `base_url or <origin>` 回退、注入尝试不产生 PWNED 副作用。负向验证过: 回退 base_url 语义立刻 5 条红(v1.1.99) | v1.1.99 |
+
+| check_diag_bounds | **AGENTS §1.7 第三项: 诊断日志有界**(R82 只补了全录/时间序, ③ 此前零闸门): 常量就是承诺值(1000 条/512KB)/条数界真触发/字节界真触发(长消息下条数先于 1000 停下, 否则是死代码)/单条 message 截 500/字段集仅元信息/坏输入不抛/闸门自证用 999 与 1001 两侧样本证明界在 1000。三项负向验证过(v1.2.3) | v1.2.3 |
 
 ## 维护约定
 
