@@ -190,6 +190,15 @@ function checkJmxStructure(src) {
   return { ok: true };
 }
 function checkXml(src) {
+  // XML 1.0 非法控制字符: 除 tab/LF/CR 外的 C0 控制字符即使写成实体也不合法,
+  // 解析器会直接拒绝整份文件。此前完全没查 —— 探针证明含 U+0001 的 JMX 能良构通过。
+  {
+    const ctrl = String(src).match(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/);
+    if (ctrl) {
+      const code = ctrl[0].charCodeAt(0).toString(16).padStart(4, "0").toUpperCase();
+      return { ok: false, error: "含 XML 1.0 非法控制字符 U+" + code + "(除 tab/LF/CR 外不允许)" };
+    }
+  }
   const s = String(src);
   const stack = [];
   let roots = 0;

@@ -24,6 +24,10 @@ if (typeof detectSuccessIndicator === "undefined") {
 // XML 转义(JMeter body 里换行还要转 &#10;)
 function xmlEsc(s) {
   return String(s)
+    // XML 1.0 非法控制字符(除 tab/LF/CR 外的 C0)必须先剥掉: 它们是 HTTP 字段里的协议违规
+    // 噪声, 且**即使写成实体也不合法** —— 留着会让整份 JMX 被 JMeter 拒绝打开。
+    // 选择剥离而非占位: 换成人眼可见的占位符会污染参数值, 剥离后仍保留其余全部内容。
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")

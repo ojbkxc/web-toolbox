@@ -127,4 +127,31 @@ console.log('');
   }
 }
 
+
+// ---- 导出物必须能被打开门: XML 1.0 非法控制字符(v1.1.97) ----
+// 实证: 含 U+0001 的 JMX 此前良构通过(checkXml 不查控制字符), 而 JMeter 会拒绝整份文件。
+// 控制字符来自 HTTP header/body/URL 的协议违规噪声 —— 可达但真实样本 0 命中, 属边界缺陷。
+{
+  const jmxMod = require(path.join(ROOT, 'jmx.js'));
+  const TC = require(path.join(ROOT, 'test/lib/toolchain.js'));
+  const ctrl = String.fromCharCode(1) + String.fromCharCode(2);
+  const mk = (v) => ([{
+    method: 'GET', url: 'https://a.test/p', path: '/s', query: 'q=1',
+    headers: { 'x-evil': v }, body: v, status: 200, response: v, ts: '', durationMs: 1,
+  }]);
+
+  const xml = jmxMod.buildJmx(mk(ctrl));
+  assert(!/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(xml),
+    'xml-ctrl. 导出物已剥离 XML 非法控制字符');
+  assert(TC.checkXml(xml).ok, 'xml-ctrl. 剥离后仍良构');
+  assert(TC.checkJmxStructure(xml).ok, 'xml-ctrl. 剥离后结构合规');
+
+  const xml2 = jmxMod.buildJmx(mk('keep' + ctrl + 'this'));
+  assert(xml2.includes('keep') && xml2.includes('this'), 'xml-ctrl. 其余内容完整保留');
+
+  const badXml = '<?xml version="1.0"?><r>' + ctrl + '</r>';
+  assert(!TC.checkXml(badXml).ok, 'xml-ctrl. 闸门自证: checkXml 拒绝含控制字符的 XML');
+  assert(TC.checkXml('<?xml version="1.0"?><r a="1">t</r>').ok, 'xml-ctrl. 正常 XML 不被误拒');
+}
+
 console.log('=== 导出器字段差异契约 PASS ===');
