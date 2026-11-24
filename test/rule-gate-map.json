@@ -1,0 +1,58 @@
+{
+  "1": {
+    "rule": "零依赖(禁构建链/npm 依赖)",
+    "gates": [
+      "test/check_repo_rules.js",
+      "test/check_security_claims.js"
+    ],
+    "negative": "注入根 package.json + import axios → check_repo_rules 红(实测)"
+  },
+  "2": {
+    "rule": "禁止放行断言",
+    "gates": [
+      "test/check_repo_rules.js",
+      "test/check_assert_signature.js"
+    ],
+    "negative": "注入 it.skip / 注释掉 assert / ok 参数反序 → 两个闸门分别红(实测)"
+  },
+  "3": {
+    "rule": "禁止全量 add(必须 pathspec)",
+    "gates": [
+      "test/check_repo_rules.js"
+    ],
+    "negative": "注入行首/引号内/--all/-u/Markdown 列表 6 形态 → 全部红; 禁令描述句不误报(实测)"
+  },
+  "4": {
+    "rule": "无真实内网域/Cookie/API Key",
+    "gates": [
+      "test/check_no_internal_domains.js",
+      "test/check_sample_evidence.js"
+    ],
+    "negative": "往 bridge/src 与 samples 注入真实内网域 → 两闸门分别红(实测)"
+  },
+  "5": {
+    "rule": "数据卫生管线不可绕过",
+    "gates": [
+      "test/check_ai_egress.js",
+      "test/check_ai_hygiene.js",
+      "test/check_ai_body.js"
+    ],
+    "negative": "把 aiSanitizeEntry 改成直通 → 3 个闸门红(实测)"
+  },
+  "6": {
+    "rule": "域名授权模型(按需授权, 禁通配)",
+    "gates": [
+      "test/check_security_claims.js",
+      "test/check_no_internal_domains.js"
+    ],
+    "negative": "manifest 加 *://*/* 或写死域名 → check_security_claims 红(实测)"
+  },
+  "7": {
+    "rule": "录制引擎不变量(全录/时间序/日志有界)",
+    "gates": [
+      "test/check_record_all.js",
+      "test/check_engine_edge.js"
+    ],
+    "negative": "完成路径插 '丢弃非 200' → check_record_all 4 条红; 截断改 1000 → engine_edge 红(实测)"
+  }
+}

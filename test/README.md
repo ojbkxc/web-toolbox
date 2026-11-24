@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 76 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 77 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -116,6 +116,8 @@ node test/check_xxx.js        # 单跑一个
 | check_assert_signature | **断言库签名一致性**(本仓有三种 ok 签名, 我用错过四次 → 输出 "OK true" 的假绿): 探测每个 suite 的签名形态(name 在前/cond 在前), 要求所有调用与之相符; 自证探针钉住判定逻辑(v1.1.79) | v1.1.79 |
 
 | check_entry_health | **入口健康(秒级)**: 23 个运行时文件语法 + 真 spawn MCP 入口喂 initialize(抓 ReferenceError 类回归, 语法过≠能启动) + doctor --help 不挂住 + 扩展 6 个入口在 vm 可加载; 负向验证过(注入未定义变量 → 红)(v1.1.80) | v1.1.80 |
+
+| check_rule_gate_map | **规则-闸门映射**(数据文件 `rule-gate-map.json` + 本闸门): AGENTS §1 每条 Never 必须登记"由哪些闸门管 + 负向验证方式"; 校验规则数一致/闸门文件真实存在且含断言/负向记录非空; 三组负向验证过(v1.1.88) | v1.1.88 |
 
 ## 维护约定
 
