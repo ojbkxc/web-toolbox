@@ -1,5 +1,22 @@
 # 更新记录
 
+## v1.1.99 — 导出的 PY 脚本开箱即崩(P0): 显式传 None 覆盖了默认参数
+
+- **P0 实证**: 用真实 python 运行导出脚本 → `TypeError: unsupported operand type(s) for +:
+  'NoneType' and 'str'`。根因: 生成器给每个 step 写了默认参数 `base_url="<录制 origin>"`,
+  而 `main()` 里写 `base_url = None` 再显式传给每个 step —— **Python 的默认参数只在"不传"时
+  生效**, 显式传 None 会把默认值覆盖成 None, 于是 `url = None + "/path"` 直接崩。
+  后果: **每一份导出的 PY 脚本, 只要不动那一行就跑不起来**, 而 `py_compile` 完全看不出来
+  (编译通过 ≠ 能运行, 与 R93「语法过 ≠ 能启动」同族)。
+- **修**: 语义改为"**可选覆盖**" —— step 签名用 `base_url=None`, 函数体内 `base_url = base_url
+  or "<录制 origin>"` 回退; `main()` 仍保留那一行可改的覆盖入口(环境切换只改一处)。
+  修后真实运行能走到"发请求", 错误变成网络层的 `SSLError`(a.test 不存在), 这才是正确行为。
+- **新增闸门** `bridge/test-py-run.mjs`(6 条, 真实 python 执行): ①默认导出必须启动到发请求
+  这一步(不因参数处理崩); ②失败原因必须是**网络层**而非脚本自身缺陷; ③改 `base_url` 后仍能跑
+  (覆盖入口真的生效); ④签名与回退行的源码形态; ⑤注入尝试(`a"); import os; os.system(...)`)
+  不产生 PWNED 副作用。本机无 python 时 SKIP 不伪装通过。
+- **负向验证**: 把语义改回"默认参数 + 显式 None" → **5 条红**(含 P0 那句 TypeError 原文);
+  恢复后绿。
 ## v1.1.98 — 导出物的"能被打开"此前只有手写解析器作证
 
 - **方法论缺口**: JMX 是否"能被 JMeter 打开"一直只由 `checkXml`(我手写的良构校验)

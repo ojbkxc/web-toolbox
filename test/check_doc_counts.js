@@ -25,7 +25,7 @@ const bridgeDeps = fs.existsSync(path.join(ROOT, "bridge", "node_modules", "ws")
 // 文档描述的是"仓库能力"(装过 bridge 依赖的完整门禁), 所以这里**恒按 3 个桥接 suite 计**;
 // 本机没装依赖时 run_all 会打 SKIP(env) 跳过那 3 个 —— 那是环境差异, 不该让文档闸门红
 // (否则"没 npm install 的机器"上所有文档都被判错, 闸门等于逼人改文档凑绿)。
-const BRIDGE_SUITES = 8;
+const BRIDGE_SUITES = 9;
 const expected = 2 + 1 + discovered + 1 + BRIDGE_SUITES;
 if (!bridgeDeps) {
   console.log(`  SKIP(env) bridge unit/exporters/doctor/reconnect/auth/perf/smoke — bridge/node_modules 未安装, 本机实跑 ${expected - BRIDGE_SUITES} 个`);

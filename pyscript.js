@@ -137,9 +137,16 @@ function genPyFunc(e, fname, sessionMarkers, chains = [], extracts = []) {
   const injectLines = chains.length ? pyChainInjectLines(e, chains) : [];
 
   const lines = [];
+  // base_url 是**可选覆盖**, 需要**两道**保障(缺一条就会坏事):
+  //   ①默认参数 `<录制 origin>` —— "不传"时生效, 也是用户/工具做字符串替换的落点;
+  //   ②函数体内 `base_url = base_url or <origin>` —— "显式传 None"时的回退。
+  // 为什么两道都要: main() 会显式传 base_url=None(语义是"不覆盖"), 而 Python 默认参数只在
+  // "不传"时生效 —— 只靠①会让 url = None + "/path" → TypeError, 导出脚本**开箱即崩**
+  // (v1.1.99 实测); 只靠②则打断按 `base_url="..."` 形态做替换的既有用法(R113 CI 抓到)。
   lines.push(`def step_${fname}(sess, ctx=None, base_url="${u.origin}"):`);
   lines.push(`    """${e.method} ${e.path}""";`);
   lines.push(`    ctx = ctx if ctx is not None else {}`); // 勿用 or {}: 空 dict 是 falsy, or 会换新 dict → 提取结果外层拿不到
+  lines.push(`    base_url = base_url or ${pyStr(u.origin)}   # 未覆盖时回退录制 origin(环境切换改 main 那一行)`);
   lines.push(`    url = base_url + ${pyStr(e.path + (hasQuery ? "?" + e.query : ""))}`);
   lines.push(`    headers = {`);
   lines.push(headerLines || `        # (无业务头)`);

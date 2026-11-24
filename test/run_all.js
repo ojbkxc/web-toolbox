@@ -31,6 +31,7 @@ if (BRIDGE_DEPS) {
     { name: "bridge-auth", file: path.join(ROOT, "bridge", "test-auth.mjs") },
     { name: "bridge-perf", file: path.join(ROOT, "bridge", "test-perf.mjs") },
     { name: "bridge-jmx-parse", file: path.join(ROOT, "bridge", "test-jmx-parse.mjs") },
+    { name: "bridge-py-run", file: path.join(ROOT, "bridge", "test-py-run.mjs") },
     { name: "bridge-smoke", file: path.join(ROOT, "bridge", "smoke.mjs") },
   ];
   if (scanIdx >= 0) suites.splice(scanIdx, 0, ...bridgeSuites);

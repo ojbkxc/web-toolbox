@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 80 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 81 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -124,6 +124,8 @@ node test/check_xxx.js        # 单跑一个
 | check_dom_escape | **扩展页面 DOM 注入面**: innerHTML 插值里不得出现裸远程字段(method/url/headers/AI 输出的 type 等); 判据精确到形态(转义/白名单包装/数字字段/纯计数/已构造片段/字面量三元都放行), 含 8 组自证 + escHtml 五字符覆盖; 负向验证过(回退任一处转义立刻红)(v1.1.96) | v1.1.96 |
 
 | bridge/test-jmx-parse | **真实消费方解析**(本机有 java 才跑, 否则 SKIP 不伪装): 用 JDK 自带 XML 解析器(DocumentBuilder, 与 JMeter 同生态)真实解析导出物 —— 正常产物 / 含控制字符的原始数据 / XML 特殊字符全覆盖; 并强校验**手写 checkXml 与真实解析器判断一致**(不一致=手写判定有盲区)。负向验证过: 去掉 & 转义或控制字符剥离立刻红(v1.1.98) | v1.1.98 |
+
+| bridge/test-py-run | **PY 导出物真实运行**(本机有 python 才跑, 否则 SKIP): 默认导出必须启动到"发请求"这一步(不因 base_url 为 None 而 TypeError)、失败原因必须是网络层、改 main 的 base_url 后仍能跑、step 用 `base_url or <origin>` 回退、注入尝试不产生 PWNED 副作用。负向验证过: 回退 base_url 语义立刻 5 条红(v1.1.99) | v1.1.99 |
 
 ## 维护约定
 
