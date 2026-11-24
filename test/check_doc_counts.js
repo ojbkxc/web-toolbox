@@ -233,6 +233,22 @@ ok("三份文档无残留的其它\"N 项\"计数", stale.length === 0, stale);
 
   // ③ 跨轮交接面必须存在
   ok("REVIEW 有「下一轮候选」小节", rl.some((l) => l === "## 下一轮候选"), "缺该小节");
+
+  // ④ 索引行的要点不得截断在 markdown 中间(R66 压缩的第二类损坏: 要点停在 `**` / `|` / `;` /
+  //    悬空编号处, 读起来像残句)。判据: 要点里不许有未配对的 `**`, 且结尾不得是分隔符。
+  const idxRe = /^- R(?:[1-9]|1[0-9]|20) · .+? — (.+)$/;
+  const badPoint = [];
+  for (const line of rl) {
+    const m2 = line.match(idxRe);
+    if (!m2) continue;
+    const p = m2[1].trim();
+    const starCount = (p.match(/\*\*/g) || []).length;
+    if (starCount % 2 !== 0) { badPoint.push(["未配对 **", line.slice(0, 60)]); continue; }
+    if (/[|;]\s*$/.test(p) || /\s-\s*$/.test(p) || /\d+\.\s*$/.test(p)) {
+      badPoint.push(["结尾悬空分隔符", line.slice(0, 60)]);
+    }
+  }
+  ok("REVIEW 索引要点没有截断在 markdown 中间", badPoint.length === 0, badPoint.slice(0, 4));
 }
 
 console.log(fails ? `=== doc counts FAIL: ${fails} ===` : `=== doc counts PASS (${expected} suites, v${version}) ===`);
