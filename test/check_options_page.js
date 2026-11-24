@@ -238,6 +238,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     ok(after.includes('localhost'), '并发添加不吞既有域名: ' + JSON.stringify(after));
   }
 
+
+  // ---- 2c. 尾点域名(FQDN 写法) → 剥尾点后入列(v1.2.1) ----
+  // "example.com." 是合法 FQDN 写法(RFC 1034 根区点), 但留着尾点会生成
+  // `https://*.example.com./*` —— 永远匹配不上真实页面, 用户看到"已添加"却一条都录不到。
+  // 放在所有既有用例之后: 它会往清单里加域名, 提前插会打断"域名清单"断言。
+  {
+    const before = domainsNow().length;
+    elements.get('input').value = 'trailing-dot.test.com.';
+    vm.runInContext('addDomain()', sandbox);
+    await until(() => domainsNow().length > before, '尾点域名处理');
+    const list = domainsNow();
+    ok(list.includes('trailing-dot.test.com'), '2c. 尾点被剥除后入列(存的是无尾点形态): ' + JSON.stringify(list));
+    ok(!list.some((d) => d.endsWith('.')), '2c. 清单里没有任何以点结尾的域名');
+  }
+
   console.log(fail ? `\n=== options 页走查 FAIL: ${fail} ===` : `\n=== options 页走查 PASS ===`);
   process.exit(fail ? 1 : 0);
 })();

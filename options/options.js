@@ -73,7 +73,10 @@ function escapeHtml(s) {
 function addDomain() {
   const raw = $input.value.trim();
   if (!raw) return;
-  const host = raw.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase();
+  // 尾点剥除: "example.com." 是合法的 FQDN 写法(RFC 1034 根区点), 与 "example.com" 等价;
+  // 但留着尾点会生成 `https://*.example.com./*` —— 这个 pattern **永远匹配不上真实页面**,
+  // 用户看到"已添加"却一条都录不到(静默失败, v1.2.1 实测)。
+  const host = raw.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/\.+$/, "").toLowerCase();
   // 无点单段主机(localhost 等)是合法目标(domainToOrigins 已支持精确授权), 不能一刀切拦;
   // 只拦明显不是主机的输入(空/带空格/纯符号)。
   if (!host || /\s/.test(host) || !/^[a-z0-9._:-]+$/i.test(host)) {
