@@ -92,7 +92,7 @@ AI 客户端 ──MCP stdio──> bridge(本进程) ──WebSocket──> dae
 
 **Q: 为什么连不上?**
 按顺序查:
-1. `node bridge/src/doctor.js` —— 18 项逐条 PASS/FAIL, 每条带"下一步";
+1. `node bridge/src/doctor.js` —— 逐条 PASS/FAIL(有 daemon 时 18 项), 每条带"下一步";
 2. 常见根因: daemon 没起 / 令牌不匹配 / 扩展没点「立即连接」/ 协议版本不一致。
 
 **Q: 控制类工具被 forbidden?**
@@ -110,8 +110,8 @@ AI 客户端 ──MCP stdio──> bridge(本进程) ──WebSocket──> dae
 ## 验证
 
 ```bash
-node bridge/smoke.mjs            # 端到端 74 项(鉴权/请求/事件/注解/错误语义/结构化/体积守卫/工具全覆盖)
-node bridge/src/doctor.js        # 自检 18 项
-node bridge/test-doctor.mjs      # doctor 端到端 21 项(真起 daemon 四场景)
+node bridge/smoke.mjs            # 端到端(鉴权/请求/事件/注解/错误语义/结构化/体积守卫/工具全覆盖)
+node bridge/src/doctor.js        # 自检(有 daemon 时 18 项)
+node bridge/test-doctor.mjs      # doctor 端到端(真起 daemon 四场景)
 cd bridge && npm test            # 聚合: unit(71) → exporters(46) → doctor(21) → smoke(74)
 ```

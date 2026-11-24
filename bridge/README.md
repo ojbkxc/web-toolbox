@@ -214,7 +214,7 @@ node src/index.js --daemon --archive-keep-days 30   # 启动时删掉 30 天前�
 ## 排障顺序(先 doctor, 再猜)
 
 ```bash
-node src/doctor.js      # 18 项逐条 PASS/FAIL, 每条带"下一步"
+node src/doctor.js      # 逐条 PASS/FAIL(有 daemon 时 18 项), 每条带"下一步"
 ```
 
 - `依赖可加载` FAIL → 在 `bridge/` 里 `npm install`(扩展本体仍是零依赖, 这层独立)
@@ -234,14 +234,14 @@ node src/doctor.js      # 18 项逐条 PASS/FAIL, 每条带"下一步"
 ## 自检
 
 ```bash
-node bridge/smoke.mjs    # 端到端: 鉴权/请求响应/事件/控制开关/未连接/工具注解/错误语义/结构化返回/字节口径/分页/截断/开关不一致/导出体积守卫, 58 项
-node bridge/unit.mjs     # 内部单测: register 自校验/config 参数守卫/hub 拒绝分支/代理转发/断线失败/archive 落盘+权限+保留期/net_list 3000 条规模与字段过滤边界, 71 项(需 npm install)
-node bridge/test-exporters.mjs  # 导出口径单测 + 单源证明 + 清洗降级 + 异常形态(HEAD/空 body/204/超长 query/PATCH/OPTIONS/multipart/HAR size), 46 项
-node bridge/test-doctor.mjs     # doctor 端到端(真起 daemon): 无 daemon/正确令牌/错令牌/参数错误 四场景, 21 项
-node bridge/test-reconnect.mjs   # 桥接客户端重连语义(可控 FakeWS): 失败重连/断开恢复/hello 帧, 10 项
-node bridge/test-auth.mjs        # 协议矩阵(独立 daemon): 鉴权/协议版本/白名单/控制开关, 9 项
-node bridge/test-perf.mjs         # 性能基线(先量后断): 导出/解析/摘要四条热路径, 4 项
+node bridge/smoke.mjs    # 端到端: 鉴权/请求响应/事件/控制开关/未连接/工具注解/错误语义/结构化返回/字节口径/分页/截断/开关不一致/导出体积守卫(项数见运行输出)
+node bridge/unit.mjs     # 内部单测: register 自校验/config 参数守卫/hub 拒绝分支/代理转发/断线失败/archive 落盘+权限+保留期/net_list 3000 条规模与字段过滤边界(需 npm install)
+node bridge/test-exporters.mjs  # 导出口径单测 + 单源证明 + 清洗降级 + 异常形态(HEAD/空 body/204/超长 query/PATCH/OPTIONS/multipart/HAR size)
+node bridge/test-doctor.mjs     # doctor 端到端(真起 daemon): 无 daemon/正确令牌/错令牌/参数错误 四场景(项数见运行输出)
+node bridge/test-reconnect.mjs   # 桥接客户端重连语义(可控 FakeWS): 失败重连/断开恢复/hello 帧
+node bridge/test-auth.mjs        # 协议矩阵(独立 daemon): 鉴权/协议版本/白名单/控制开关
+node bridge/test-perf.mjs         # 性能基线(先量后断): 导出/解析/摘要四条热路径
 cd bridge && npm test    # 聚合: unit → exporters → doctor → smoke, 任一层红即退出非零
-node src/doctor.js          # 自检: 监听地址/node 版本/依赖/协议契约/令牌/daemon 端口/归档目录/令牌权限/扩展就位/活体握手/协议/版本一致性, 18 项
+node src/doctor.js          # 自检: 监听地址/node 版本/依赖/协议契约/令牌/daemon 端口/归档目录/令牌权限/扩展就位/活体握手/协议/版本一致性(有 daemon 时 18 项)
 node test/check_bridge.js   # 契约走查: 协议一致性/白名单对应/录制不变量, 归入全量回归
 ```

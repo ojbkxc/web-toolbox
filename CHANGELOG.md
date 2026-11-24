@@ -1,5 +1,20 @@
 # 更新记录
 
+## v1.1.93 — bridge 文档里的套件项数全部漂移, 且没人管
+
+- **实测漂移**(逐条跑出真实数对比文档): `bridge/README` 写 smoke **58** 项(实际 **74**)、
+  test-doctor **21** 项(实际 **24**)、unit **71** 项(实际 **84**); `docs/mcp-clients` 的 74/21
+  同样陈旧; `docs/troubleshooting` 写"扩展回归 **67** 项"(实际 **78**)。
+- **为什么一直没人发现**: `check_doc_counts` 只覆盖 AGENTS / README / test README 三份,
+  **bridge/README 与 docs/ 下的项数完全没人管**; 而每轮加断言这些数字就漂一点。
+- **处置(遵循"判据位去数值化")**: bridge 套件的项数**一律不写**(改"项数见运行输出") ——
+  它们随断言增减必然漂, 写死等于每轮制造一处假承诺。只有 **doctor 自检的 18 项**保留,
+  因为它有 daemon 时稳定、且是用户可感知的"排查面大小", 但必须写明"有 daemon 时"前提
+  (无 daemon 时只有 15 项, 那 3 项依赖 daemon 才能查)。
+- **闸门**: `check_doc_counts` 补 2 条 —— ①bridge 文档除"有 daemon 时 18 项"外不得出现任何
+  "N 项"(塞回 74 项立刻红); ②doctor 的**静态 check 调用数必须 >= 18**(防"文档写 18、
+  代码删到 12")。负向验证: 两种注入都精确红; 恢复后绿。
+
 ## v1.1.92 — 断言可以静默删除(全量照样绿)
 
 - **实证缺口**: R92 的 `check_assert_signature` 管"签名一致", `check_repo_rules` 管

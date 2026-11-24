@@ -153,5 +153,31 @@ for (const [name, src] of [["AGENTS", AGENTS], ["CLAUDE", CLAUDE], ["test/README
 }
 ok("三份文档无残留的其它\"N 项\"计数", stale.length === 0, stale);
 
+// ---- bridge 文档里的"项数"声明(v1.1.93) ----
+// 实证漂移: bridge/README 写 smoke 58 项(实际 74)、test-doctor 21 项(实际 24)、unit 71 项
+// (实际 84); docs/mcp-clients 也写着 74/21; docs/troubleshooting 写"扩展回归 67 项"(实际 78)。
+// 这些数字没人管(本闸门此前只覆盖 AGENTS/README/test README), 每次加断言就漂一点。
+// 处置: **bridge 套件的项数一律不写**(写"项数见运行输出"); 只有 doctor 自检的 18 项保留,
+// 因为它有 daemon 时稳定且是用户可感知的"排查面大小", 但必须带"有 daemon 时"前提。
+{
+  const bridgeDocs = ["bridge/README.md", "docs/mcp-clients.md", "docs/troubleshooting.md"];
+  const bad = [];
+  for (const rel of bridgeDocs) {
+    const p = path.join(ROOT, rel);
+    if (!fs.existsSync(p)) continue;
+    fs.readFileSync(p, "utf8").split(/\r?\n/).forEach((line, i) => {
+      // 允许: 含"有 daemon 时 18 项"这条带前提的 doctor 描述
+      if (/有 daemon 时 18 项/.test(line)) return;
+      if (/\d+\s*项/.test(line)) bad.push(`${rel}:${i + 1}`);
+    });
+  }
+  ok("bridge 文档不写会被漂移的套件项数(仅保留带前提的 doctor 18 项)", bad.length === 0, bad);
+  // doctor 的 18 项必须真的有 18 个检查(静态 check( 调用数, 防"文档写 18 代码只剩 12")
+  const doctorSrc = fs.readFileSync(path.join(ROOT, "bridge", "src", "doctor.js"), "utf8");
+  const calls = (doctorSrc.match(/(?<![\w.])check\(/g) || []).length;
+  const defs = (doctorSrc.match(/function check\(|const check = \(/g) || []).length;
+  ok(`doctor 实际检查数 >= 18(静态 ${calls - defs} 处 check 调用)`, calls - defs >= 18, calls - defs);
+}
+
 console.log(fails ? `=== doc counts FAIL: ${fails} ===` : `=== doc counts PASS (${expected} suites, v${version}) ===`);
 process.exit(fails ? 1 : 0);

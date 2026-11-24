@@ -9,7 +9,7 @@
 node bridge/src/doctor.js
 ```
 
-18 项逐条 PASS/FAIL + 两行 INFO(归档保留期/体积), 每条 FAIL 带具体"下一步":
+逐条 PASS/FAIL(有 daemon 时 18 项) + INFO(归档保留期/体积/余量), 每条 FAIL 带具体"下一步":
 令牌活体握手(用 daemon 自己的令牌验你手里这串)、daemon 端口、协议与包版本一致性、
 监听地址暴露面(非回环时令牌是唯一防线)、归档目录可写、扩展 manifest 完整性等。
 **连不上时第一个跑它**, 不要先猜。
@@ -74,6 +74,6 @@ detach 事件(v1.1.36)。若真断了, 先确认不是外部工具(第二个 CDP
 
 | 层 | 命令 | 覆盖 |
 |---|---|---|
-| 扩展回归 | `node test/run_all.js` | 67 项(引擎/UI/导出/AI 卫生/桥接三层) |
+| 扩展回归 | `node test/run_all.js` | 全量(引擎/UI/导出/AI 卫生/桥接三层) |
 | 桥接聚合 | `cd bridge && npm test` | unit 71 → exporters 46 → doctor 21 → smoke 74 |
-| 排障 | `node bridge/src/doctor.js` | 18 项自检 + 归档 INFO |
+| 排障 | `node bridge/src/doctor.js` | 自检(有 daemon 时 18 项) + 归档 INFO |
