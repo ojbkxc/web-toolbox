@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 83 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 84 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -130,6 +130,8 @@ node test/check_xxx.js        # 单跑一个
 | check_diag_bounds | **AGENTS §1.7 第三项: 诊断日志有界**(R82 只补了全录/时间序, ③ 此前零闸门): 常量就是承诺值(1000 条/512KB)/条数界真触发/字节界真触发(长消息下条数先于 1000 停下, 否则是死代码)/单条 message 截 500/字段集仅元信息/坏输入不抛/闸门自证用 999 与 1001 两侧样本证明界在 1000。三项负向验证过(v1.2.3) | v1.2.3 |
 
 | check_skill_set | **AI 技能集守恒**(AGENTS §5 ask-first): 技能 name 集合必须与基线 `skill-set.json` 一致 —— 新增/移除都会红, 必须在同一次改动里更新基线(那次更新就是"显式声明", 会出现在 review diff 里); 另验每个技能都声明 buildPrompt。实测注入第 11 个技能时其余 4 个 AI 闸门全绿, 只有它能拦(v1.2.4) | v1.2.4 |
+
+| check_doc_commands | **文档里的命令必须真能跑**: 扫 12 份文档里所有 `node <file>` 形态, 目标文件必须存在(占位符 `xxx`/`<...>` 豁免); 实测抓出过 `docs/tool-reference.md` 头部仍写 `.js` 而生成器已改名 `.cjs` 的死链。含 2 组闸门自证(v1.2.9) | v1.2.9 |
 
 ## 维护约定
 

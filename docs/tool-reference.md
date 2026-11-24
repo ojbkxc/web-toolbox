@@ -1,6 +1,6 @@
 # 工具参考(Tool Reference)
 
-> 本文件由 `node bridge/gen-tool-reference.js > docs/tool-reference.md` **生成**, 不要手改。
+> 本文件由 `node bridge/gen-tool-reference.cjs` **生成**, 不要手改(重跑该命令即可同步)。
 > 源头是 `bridge/src/tools.js`(name/title/描述/参数/注解), 漂移会在 `check_doc_counts` 闸门红。
 
 ## 状态与抓包(只读)

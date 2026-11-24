@@ -1,5 +1,19 @@
 # 更新记录
 
+## v1.2.9 — 文档让人跑的命令指向一个不存在的文件
+
+- **实证死链**: `docs/tool-reference.md` 头部写着"本文件由 `node bridge/gen-tool-reference.js`
+  生成" —— 但那个生成器在 **R74 已改名 `.js` → `.cjs`**(因为 `bridge/package.json` 是 ESM)。
+  用户照文档重跑 → `Cannot find module`。而这份文档本身就是"生成式"的, 它的头部自述**没人校验**。
+- **线索**: 同目录的 `gen-skills-doc` 那份写对了(`.cjs`) —— **两份同类文档口径不一致**, 一眼能看出
+  至少有一份是旧的。改的时候只改了一个生成器, 漏了另一个。
+- **修**: 生成器头部文案改为 `.cjs`(并去掉误导性的 `> docs/tool-reference.md` 重定向写法, 改成
+  "重跑该命令即可同步")。
+- **新增闸门** `check_doc_commands`(4 条): 扫 12 份文档里所有 `node <file>.{js,mjs,cjs}` 形态,
+  目标必须真实存在; 占位符(`xxx` / `<...>` / `APP` / `TARGET`)豁免 —— 那是**有意的模板**,
+  当成死链会误报。含 2 组闸门自证。
+- **负向验证**: 把文档头改回 `.js` → 精确点名 `docs/tool-reference.md:3`; 往 README 塞一条
+  `node bridge/gen-gone.cjs` → 精确点名 `README.md:328`; 恢复后绿。
 ## v1.2.8 — 「环境跳过必须明说」这条硬要求此前零机检
 
 - **审计**: AGENTS §2 写着"环境限制用 skip 标注, 不伪装通过"。仓库里 5 个文件有 `SKIP(env)`

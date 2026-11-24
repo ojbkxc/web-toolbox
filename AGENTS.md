@@ -10,7 +10,7 @@
 零业务逻辑、只产出数据；目标域名完全可配置（`optional_host_permissions`，不配域名对任何站点无权工作）。
 
 - **仓库**：https://github.com/ojbkxc/web-toolbox（main 分支，直接 push，不走 PR）
-- **形态**：`manifest.json` v3，版本号在 manifest `"version"`（当前 1.2.8）
+- **形态**：`manifest.json` v3，版本号在 manifest `"version"`（当前 1.2.9）
 - **入口文件**：
   - `background.js` — service worker，录制引擎（chrome.debugger attach/网络事件/环形诊断日志）
   - `sidepanel/` — 工作台（查看/过滤/重放/关联/导出/AI 全在侧栏）
@@ -19,7 +19,7 @@
   - `common.js` — 共享工具（所有页面与 worker 共用）
   - `jmx.js` JMeter 导出 / `replay.js` 重放 / `correlate.js` 自动关联 / `pyscript.js` PY 导出
   - `aireport.js` AI 报告/诊断/建链/断言 / `skill.js` AI 技能 / `auth.js` 登录前置识别
-- **测试**：`test/run_all.js`（`node test/run_all.js`，83 项全绿退出码 0(含桥接层 unit/smoke, 需 bridge/node_modules)，零依赖只需 node）
+- **测试**：`test/run_all.js`（`node test/run_all.js`，84 项全绿退出码 0(含桥接层 unit/smoke, 需 bridge/node_modules)，零依赖只需 node）
 - **样本库**：`samples/`（`known/` 自造 KTKI 样本 + `opensource/` 开源项目真实样本——
   **通用化规则必须用开源样本验证**，不许只拿 KTKI 样本自证）
 
@@ -43,7 +43,7 @@
 
 ## 2. 验证纪律（本仓库 CI = 本地 node，因为没有 Actions）
 
-- **完成态定义 = `node test/run_all.js` 全绿(83/83)**。这是唯一回归门禁。
+- **完成态定义 = `node test/run_all.js` 全绿(84/84)**。这是唯一回归门禁。
   改动收尾必须跑它；失败只修根因，不许跳过失败项。
 - **跨平台铁律**（v1.1.5 起）：测试禁止 shell 出去调 `bash`（Windows PATH 只有 git.exe 时
   `spawnSync bash ENOENT` 会让整片套件环境性假红）；外部解释器统一走 `test/lib/toolchain.js`
@@ -84,7 +84,7 @@
    禁止交互式凭据管理器（无人值守会永久挂起）。
 4. **commit 信息**：中文，说清"改了什么、为什么"（与现有历史风格一致）。
 5. **不许宣称被阻塞**：没实际尝试就说 "not attempted"；被挡下要引用真实报错。
-6. **结束卫生**：不留未提交改动；最终答复带回归结论（83/83 PASS）或 commit SHA。
+6. **结束卫生**：不留未提交改动；最终答复带回归结论（84/84 PASS）或 commit SHA。
 
 ## 4b. 发版口径(与全局"不留 main 领先"对齐)
 

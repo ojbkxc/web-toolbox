@@ -99,7 +99,7 @@ const groups = [
 const L = [];
 L.push("# 工具参考(Tool Reference)");
 L.push("");
-L.push("> 本文件由 \`node bridge/gen-tool-reference.js > docs/tool-reference.md\` **生成**, 不要手改。");
+L.push("> 本文件由 \`node bridge/gen-tool-reference.cjs\` **生成**, 不要手改(重跑该命令即可同步)。");
 L.push("> 源头是 \`bridge/src/tools.js\`(name/title/描述/参数/注解), 漂移会在 \`check_doc_counts\` 闸门红。");
 L.push("");
 for (const [g, ns] of groups) {
