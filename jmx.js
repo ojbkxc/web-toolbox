@@ -195,6 +195,20 @@ function assertHttpUrl(e, idx) {
 }
 // 单条请求 -> HTTPSamplerProxy + 挂 HeaderManager
 // opts: { domain, protocol, correlated: Map<path+name, "${var}"> }
+// query 内联上限: 超过这么多字符就拆成 Arguments 参数。
+// 为什么要有阈值而不是一律拆: 短 query 内联在 path 里最直观(和浏览器地址栏同形),
+// 一律拆成参数表反而多一层跳转; 而数千字符的 query 内联在 JMeter 的 path 输入框里几乎
+// 无法阅读和修改(要横向滚动找某个参数), 拆成一行一个参数才可维护。
+const QUERY_INLINE_MAX = 300;
+
+// 把 query 串拆成 [[k, v], ...]。保留空值与无值形态(k / k=)。
+function splitQuery(q) {
+  return String(q || "").split("&").filter((x) => x !== "").map((kv) => {
+    const i = kv.indexOf("=");
+    return i < 0 ? [kv, ""] : [kv.slice(0, i), kv.slice(i + 1)];
+  });
+}
+
 function httpSampler(e, opts) {
   const u = assertHttpUrl(e, e._index == null ? 0 : e._index);
   const name = e._samplerName;
@@ -202,6 +216,8 @@ function httpSampler(e, opts) {
 
   parts.push(`<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="${xmlEsc(name)}" enabled="true">`);
 
+  // 长 query(v1.2.0): path 里不带 ?query, 改写成参数表 —— 一行一个参数才能在 JMeter 里读改
+  const qParams = !e.body && (e.query || "").length > QUERY_INLINE_MAX ? splitQuery(e.query) : null;
   if (e.body) {
     // raw body(POST JSON 等)
     parts.push('<boolProp name="HTTPSampler.postBodyRaw">true</boolProp>');
@@ -211,6 +227,21 @@ function httpSampler(e, opts) {
     parts.push(`<stringProp name="Argument.value">${xmlEsc(e.body || "")}</stringProp>`);
     parts.push('<stringProp name="Argument.metadata">=</stringProp></elementProp>');
     parts.push("</collectionProp></elementProp>");
+  } else if (qParams) {
+    // 参数化形态: postBodyRaw=false + 逐参数 elementProp(JMeter 会拼回 query)
+    parts.push('<boolProp name="HTTPSampler.postBodyRaw">false</boolProp>');
+    parts.push('<elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" enabled="true">');
+    parts.push('<collectionProp name="Arguments.arguments">');
+    for (const [k, v] of qParams) {
+      parts.push(`<elementProp name="${xmlEsc(k)}" elementType="HTTPArgument">`);
+      parts.push(`<boolProp name="HTTPArgument.always_encode">true</boolProp>`);
+      parts.push(`<stringProp name="Argument.value">${xmlEsc(v)}</stringProp>`);
+      parts.push(`<stringProp name="Argument.metadata">=</stringProp>`);
+      parts.push(`<boolProp name="HTTPArgument.use_equals">true</boolProp>`);
+      parts.push(`<stringProp name="Argument.name">${xmlEsc(k)}</stringProp>`);
+      parts.push("</elementProp>");
+    }
+    parts.push("</collectionProp></elementProp>");
   } else {
     parts.push('<elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" enabled="true">');
     parts.push('<collectionProp name="Arguments.arguments"/>');
@@ -218,7 +249,7 @@ function httpSampler(e, opts) {
   }
 
   // path + query(query 里的 & 已在 xmlEsc 转义)
-  let fullPath = e.path + (e.query ? "?" + e.query : "");
+  let fullPath = e.path + (!qParams && e.query ? "?" + e.query : "");
   parts.push(`<stringProp name="HTTPSampler.domain">${opts.domain}</stringProp>`);
   parts.push("<stringProp name=\"HTTPSampler.port\"/>");
   parts.push(`<stringProp name="HTTPSampler.protocol">${u.protocol.replace(":", "")}</stringProp>`);

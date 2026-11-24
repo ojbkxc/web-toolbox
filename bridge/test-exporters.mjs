@@ -183,7 +183,10 @@ const noise = [
   // 口径: buildJmx 把 query 原样拼进 HTTPSampler.path(不拆成 Arguments), 保证 URL 与录制完全一致;
   // 参数化靠变量注入/CSV, 不是逐参数展开。这条断言钉住既有语义, 防止"顺手拆参数"改变导出结果。
   // XML 里 & 会转义成 &amp;, 断言按真实产物写
-  ok("超长 query 原样进入 HTTPSampler.path(含 XML 转义)", /name="HTTPSampler\.path">\/q\?p0=value0&amp;p1=value1/.test(xml),
+  // 契约变更(v1.2.0, 用户批准): query 超过 300 字符拆成 Arguments 参数表 ——
+  // 数千字符的 query 内联在 JMeter 的 path 输入框里几乎无法阅读和修改。短 query 仍内联。
+  ok("超长 query 拆成 Arguments 参数表(path 不含 ?query)",
+    !/name="HTTPSampler\.path">\/q\?/.test(xml) && /Argument\.name">p0</.test(xml) && /Argument\.name">p29</.test(xml),
     (xml.match(/name="HTTPSampler\.path">[^<]{0,40}/g) || []).slice(0, 2));
 
   const py = EX.buildPyText(edges);

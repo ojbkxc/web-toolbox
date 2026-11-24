@@ -387,7 +387,14 @@ function dispatchNetworkEvent(src, method, params) {
     (async () => {
       try {
         const body = await chrome.debugger.sendCommand(src, "Network.getResponseBody", { requestId: params.requestId });
-        item.response = body && body.base64Encoded ? "(binary/base64 略)" : ((body && body.body) || "").slice(0, 200000);
+        // 响应体上限按 **UTF-8 字节**(200KB = 204800B)截断。此前用 .slice(0, 200000) 是
+        // 按 UTF-16 码元数 —— 中文每字 3 字节, 20 万字符实际可到 ~600KB, 与注释/文档承诺
+        // 的"200KB"差 3 倍, 直接吃掉 chrome.storage 的 10MB 配额。
+        // 截断点回退到完整字符边界: 半个 UTF-8 序列会让 JSON 出现非法字节, 导出 HAR 后
+        // 消费方解码就报错(保真可以少几字节, 但不能给坏数据)。
+        item.response = body && body.base64Encoded
+          ? "(binary/base64 略)"
+          : utf8Slice((body && body.body) || "", 200 * 1024);
       } catch {
         item.response = ""; // 无 body(如 204)或已被浏览器丢弃
       }
@@ -525,6 +532,27 @@ function flushEntries(items) {
     }
   });
   return harvestQueue;
+}
+
+// 按 **UTF-8 字节**截断字符串, 且回退到完整字符边界。
+// 为什么不直接用 .slice(): 它是 UTF-16 码元计数, 与"字节"无关(中文差 3 倍);
+// 为什么不直接切 Buffer: 切在字符中间会产出半个多字节序列 → JSON 非法字节 → 导出物解析失败。
+// 实现: 先按码点累加字节数, 超限即停 —— 天然落在字符边界(不会拆代理对, 也不会拆 UTF-8 序列)。
+function utf8Slice(str, maxBytes) {
+  const s = String(str == null ? "" : str);
+  if (!maxBytes || maxBytes <= 0) return "";
+  // 快速路径: ASCII 占比高的响应体(JSON/HTML 多数如此)按长度先粗判, 避免每个字符都 encode
+  if (s.length * 3 <= maxBytes) return s;   // 最坏情况(每字符 3B)都没超, 一定不超
+  let bytes = 0;
+  let i = 0;
+  while (i < s.length) {
+    const cp = s.codePointAt(i);
+    const n = cp > 0xffff ? 4 : cp > 0x7ff ? 3 : cp > 0x7f ? 2 : 1;
+    if (bytes + n > maxBytes) break;
+    bytes += n;
+    i += cp > 0xffff ? 2 : 1;   // 代理对占两个码元
+  }
+  return s.slice(0, i);
 }
 
 function pushEntry(item) {

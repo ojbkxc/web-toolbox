@@ -154,4 +154,29 @@ console.log('');
   assert(TC.checkXml('<?xml version="1.0"?><r a="1">t</r>').ok, 'xml-ctrl. 正常 XML 不被误拒');
 }
 
+
+// ---- 长 query 参数化(v1.2.0) ----
+// 动机: 数千字符的 query 内联在 JMeter 的 path 输入框里几乎无法阅读和修改(要横向滚动找参数)。
+// 处置: 超过 300 字符拆成 Arguments 参数表(一行一个参数); 短 query 保持内联(零涟漪)。
+{
+  const jmxMod = require(path.join(ROOT, 'jmx.js'));
+  const TC = require(path.join(ROOT, 'test/lib/toolchain.js'));
+  const mk = (query) => ([{
+    method: 'GET', url: 'https://a.test/p' + (query ? '?' + query : ''), path: '/p', query,
+    headers: {}, body: '', status: 200, response: '', ts: '', durationMs: 1,
+  }]);
+  const shortQ = 'a=1&b=2';
+  const longQ = Array.from({ length: 60 }, (_, i) => 'k' + i + '=' + 'v'.repeat(8)).join('&');
+
+  const xmlShort = jmxMod.buildJmx(mk(shortQ));
+  assert(xmlShort.includes('/p?a=1&amp;b=2'), 'qa. 短 query 内联在 path(零涟漪)');
+  assert(!/Argument\.name">a</.test(xmlShort), 'qa. 短 query 不产参数表');
+
+  const xmlLong = jmxMod.buildJmx(mk(longQ));
+  assert(/<stringProp name="HTTPSampler\.path">\/p<\/stringProp>/.test(xmlLong), 'qa. 长 query 时 path 不含 query');
+  assert((xmlLong.match(/Argument\.name">k\d+</g) || []).length === 60, 'qa. 长 query 的 60 个参数逐个进 Arguments');
+  assert(TC.checkJmxStructure(xmlLong).ok, 'qa. 参数化形态结构合规: ' + (TC.checkJmxStructure(xmlLong).error || ''));
+  assert(TC.checkXml(xmlLong).ok, 'qa. 参数化形态良构');
+}
+
 console.log('=== 导出器字段差异契约 PASS ===');

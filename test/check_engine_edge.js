@@ -132,7 +132,9 @@ const ids = () => (harvest()?.entries || []).map((e) => e.id);
   fire("Network.loadingFinished", { requestId: "big", timestamp: 8.1 });
   await sleep(60);
   const big = (harvest().entries || []).find((e) => e.path === "/big");
-  ok(big && big.response.length === 200000, "响应体截断到 200KB(实得 " + (big ? big.response.length : 0) + ")");
+  // 截断口径 = **UTF-8 字节**(200KB = 204800B), 不是 UTF-16 码元数(v1.2.0 改)
+ok(big && big.response.length === 204800, "响应体按字节截断到 204800B(ASCII 下即 204800 字符, 实得 " + (big ? big.response.length : 0) + ")");
+ok(big && Buffer.byteLength(big.response, "utf8") === 204800, "截断后字节数恰为 204800");
   ok(harvest().v === 1, "信封 v=1");
 
   // 6) 配额预算裁剪真实数据流: 100 条 × 80KB(8MB > 7.5MB 预算) → flush 后库应被裁到 ≤ 预算,
@@ -408,7 +410,7 @@ const ids = () => (harvest()?.entries || []).map((e) => e.id);
     fire("Network.requestWillBeSent", { requestId: "x3", timestamp: 12, request: { url: "https://app.test.com/" + "p".repeat(8000), method: "GET", headers: {} } });
     fire("Network.responseReceived", { requestId: "x3", response: { status: 200, mimeType: "text/plain" } });
     fire("Network.loadingFinished", { requestId: "x3", timestamp: 12.1 });
-    // 3MB 单条响应(超 200KB 上限)
+    // 3MB 单条响应(超 200KB=204800B 上限)
     global.__respBodies["x4"] = "Y".repeat(3 * 1024 * 1024);
     fire("Network.requestWillBeSent", { requestId: "x4", timestamp: 13, request: { url: "https://app.test.com/huge", method: "GET", headers: {} } });
     fire("Network.responseReceived", { requestId: "x4", response: { status: 200, mimeType: "text/plain" } });
@@ -423,10 +425,32 @@ const ids = () => (harvest()?.entries || []).map((e) => e.id);
     const e3 = es9.find((e) => e.path.length > 8000);
     ok(!!e3, "10. 8KB URL 条目在");
     const e4 = es9.find((e) => e.path === "/huge");
-    ok(!!e4 && e4.response.length === 200000, `10. 3MB 响应截断到 200000 但条目在(${e4 ? e4.response.length : "缺"})`);
+    ok(!!e4 && Buffer.byteLength(e4.response, "utf8") === 204800, `10. 3MB 响应按字节截断到 204800B 但条目在(${e4 ? Buffer.byteLength(e4.response, "utf8") : "缺"})`);
     await msg("stopRecording");
   }
 
-  console.log(fail ? `\n=== 引擎边界 FAIL: ${fail} ===` : `\n=== 引擎边界走查 PASS ===`);
+  
+  // ---- 11) 截断口径 = UTF-8 字节, 且不拆字符边界(v1.2.0) ----
+  // 为什么单列: 按字符截断时 20 万中文字符可达 ~600KB, 与"200KB"承诺差 3 倍;
+  // 而按字节截断若切在字符中间, 会产出半个 UTF-8 序列 → 导出物解析失败。两个都要验。
+  {
+    mem["toolbox.harvest"] = { v: 1, entries: [] };
+    await msg("setDomains", { domains: ["app.test.com"] });
+    await msg("startRecording", { tabId: 123 });
+    const CN = "中";   // 3 字节/字符
+    global.__respBodies["cn"] = CN.repeat(100000);   // 30 万字节, 必被截断
+    fire("Network.requestWillBeSent", { requestId: "cn", timestamp: 30, request: { url: "https://app.test.com/cn", method: "GET", headers: {} } });
+    fire("Network.responseReceived", { requestId: "cn", response: { status: 200, mimeType: "text/plain" } });
+    fire("Network.loadingFinished", { requestId: "cn", timestamp: 30.1 });
+    await sleep(150);
+    const ecn = ((mem["toolbox.harvest"] || {}).entries || []).find((x) => x.path === "/cn");
+    ok(!!ecn, "11a 中文大响应条目在");
+    const cnBytes = ecn ? Buffer.byteLength(ecn.response, "utf8") : 0;
+    ok(cnBytes <= 204800 && cnBytes > 204700, `11b 中文响应按字节截断到 <=204800B(实得 ${cnBytes}B)`);
+    ok(ecn && ecn.response.length === cnBytes / 3, `11c 截断后字符数与字节数严格 3:1(说明没切半个汉字, 实得 ${ecn ? ecn.response.length : 0} 字)`);
+    ok(ecn && Buffer.from(ecn.response, "utf8").toString("utf8") === ecn.response, "11d 截断结果 UTF-8 往返一致(无非法字节)");
+    await msg("stopRecording");
+  }
+console.log(fail ? `\n=== 引擎边界 FAIL: ${fail} ===` : `\n=== 引擎边界走查 PASS ===`);
   process.exit(fail ? 1 : 0);
 })();

@@ -48,6 +48,17 @@ node bridge/src/doctor.js
 桥接侧只 detach 自己 attach 的(v1.1.35), 引擎侧跳过带 `toolboxBridgeOwnDetach` 标记的
 detach 事件(v1.1.36)。若真断了, 先确认不是外部工具(第二个 CDP 客户端)抡走了调试器。
 
+## 症状: 导出的 HAR 里响应头是空的
+
+**这是已知边界, 不是 bug**: 引擎只存 **请求头**(用于重放/生成脚本), **响应头不落库** ——
+它只在导出时按需消费, 存下来会额外占用 `chrome.storage` 的 10MB 配额(每条几十到几百字节)。
+
+所以 `buildHar` 输出 `response.headers: []`。需要响应头时: 在 DevTools 的 Network 面板看
+原始请求, 或用 `net_get` 取响应正文(正文是保真的)。
+
+评估过的替代方案: CDP `responseReceived` 里把 headers 一起存 —— 收益是 HAR 更完整,
+代价是配额能存的条数明显下降(实测每条 +几十~几百字节)。**当前选择保条数**。
+
 ## 症状: 导出报「产物过大」
 
 实测 3000 条会产 JMX ≈6.7MB / HAR ≈5.3MB, 超 `maxChars`(默认 2M)就明确失败 ——

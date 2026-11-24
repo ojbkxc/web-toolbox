@@ -58,7 +58,11 @@ web-toolbox 是一套**本机浏览器自动化工具**: Chrome 扩展负责录�
   —— 由 `test/check_ai_egress.js` 逐条断言(唯一例外是选项页「测试连接」, 它只发固定探测文本,
   白名单本身也要通过"不接触录制数据"的自检)。
 - **`chrome.storage.local`**: 录制会话(带 `{v, entries}` 信封, 单会话上限 3000 条)。
-- **`chrome.storage.local` 里还有两项凭据(此前未写明, v1.1.95 补)**: 选项页填的 LLM `api_key`
+
+- **响应头不落库**(v1.2.0 明确): 引擎只存**请求头**(重放/生成脚本要用), 响应头**从不写入
+  storage** —— 它只在导出 HAR 时按需消费。取舍: 存下来会让每条多占几十~几百字节,
+  直接压低 10MB 配额能存的条数, 而响应头对"重放这条请求"没有用处。
+  想知道某条响应的头: 在 DevTools Network 面板看原始请求, 或用 `net_get` 取正文。- **`chrome.storage.local` 里还有两项凭据(此前未写明, v1.1.95 补)**: 选项页填的 LLM `api_key`
   (`toolbox.llm`)与桥接令牌(`toolbox.bridge`)都存在这里 —— 它们与 `~/.web-toolbox/bridge-token`
   里的那份**是两份独立副本**, 删掉文件不会清掉扩展里这份。谁能读:`chrome.storage.local` 只对本
   扩展的页面可见(选项页/侧栏/popup/service worker), 网页与其它扩展都读不到; 但**同机同用户的进程**

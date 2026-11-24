@@ -88,6 +88,15 @@ AI 客户端 ──MCP stdio──> bridge(本进程) ──WebSocket──> dae
 对破坏性工具(点击/输入/执行 JS/重放)要求二次确认。7 个工具额外提供 `structuredContent`
 机读输出(免 JSON.parse 文本)。
 
+## 归档: 只写不读(有意为之)
+
+`--archive-dir` 会把扩展推来的条目按天追加到本地 JSONL(`harvest-YYYY-MM-DD.jsonl`),
+但 **MCP 工具面不提供归档查询** —— `bridge_status` 的 `archive` 字段只报"有没有/写了多少"。
+
+为什么不做查询工具: 归档里是**明文流量**, 加一个查询工具等于把 AI 的读取面扩到历史全量数据。
+现在的出口是用户自己看文件(每行 `{batchId, archivedAt, entry}`), 需要时直接 `type`/`jq`。
+归档不会被自动清理(`--archive-keep-days 0` 默认永不删); 要限制体积请显式设保留天数。
+
 ## 常见问题
 
 **Q: 为什么连不上?**

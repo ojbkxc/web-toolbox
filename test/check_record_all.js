@@ -105,13 +105,14 @@ function roundTrip(reqId, { url, method = "GET", status = 200, mime = "applicati
   ok(hasAllMime, "② text/html、image/png、text/event-stream 都入库(净化只在导出层)");
   ok(entries().length === 8, "② 累计 8 条(4 状态码 + 4 mime 形态): " + entries().length);
 
-  // ③ 超长响应体: 条目在, response 被截断(200000 上限)
+  // ③ 超长响应体: 条目在, response 按 **UTF-8 字节**截断(200KB = 204800B 上限, v1.2.0)
   global.__respBodies["big"] = "A".repeat(300000);
   roundTrip("big", { url: "https://app.test.com/big", body: "A".repeat(300000) });
   await sleep(80);
   const big = entries().find((e) => e.path === "/big");
   ok(!!big, "③ 超长响应体仍入库(不丢条目)");
-  ok(big && big.response.length <= 200000, "③ 响应体截断到 200000: " + (big ? big.response.length : "-"));
+  ok(big && Buffer.byteLength(big.response, "utf8") <= 204800,
+    "③ 响应体按字节截断到 204800B: " + (big ? Buffer.byteLength(big.response, "utf8") + "B" : "-"));
 
   // ④ 空响应体(204/无 body)
   roundTrip("empty", { url: "https://app.test.com/204", status: 204 });
