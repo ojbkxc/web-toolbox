@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 85 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 86 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -134,6 +134,8 @@ node test/check_xxx.js        # 单跑一个
 | check_doc_commands | **文档里的命令必须真能跑**: 扫 12 份文档里所有 `node <file>` 形态, 目标文件必须存在(占位符 `xxx`/`<...>` 豁免); 实测抓出过 `docs/tool-reference.md` 头部仍写 `.js` 而生成器已改名 `.cjs` 的死链。含 2 组闸门自证(v1.2.9) | v1.2.9 |
 
 | check_readme_tree | **README 文件结构树 ↔ 实际文件**: 树里每项必须存在(幽灵)、实际关键项(.js/.json/目录)必须都画进树(漏画)、树里不得写死 check_*/e2e_* 计数(会漂)。实测曾漏画 bridge/、samples/、bridge-client.js 等关键项, 且把 check_* 计数写死成旧值(v1.3.0) | v1.3.0 |
+
+| check_options_docs | **选项页配置项的"填什么"必须在 README 说清**: 目标域名 / AI 接口地址(默认 8787) / 桥接地址(`ws://127.0.0.1:9280/ext`) / 桥接令牌(`bridge-token`) —— 判据要求给**具体默认值或形态**, 只写"配置一下"判红。实测补过桥接地址与令牌来源(v1.3.1) | v1.3.1 |
 
 ## 维护约定
 
