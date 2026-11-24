@@ -58,6 +58,12 @@ web-toolbox 是一套**本机浏览器自动化工具**: Chrome 扩展负责录�
   —— 由 `test/check_ai_egress.js` 逐条断言(唯一例外是选项页「测试连接」, 它只发固定探测文本,
   白名单本身也要通过"不接触录制数据"的自检)。
 - **`chrome.storage.local`**: 录制会话(带 `{v, entries}` 信封, 单会话上限 3000 条)。
+- **`chrome.storage.local` 里还有两项凭据(此前未写明, v1.1.95 补)**: 选项页填的 LLM `api_key`
+  (`toolbox.llm`)与桥接令牌(`toolbox.bridge`)都存在这里 —— 它们与 `~/.web-toolbox/bridge-token`
+  里的那份**是两份独立副本**, 删掉文件不会清掉扩展里这份。谁能读:`chrome.storage.local` 只对本
+  扩展的页面可见(选项页/侧栏/popup/service worker), 网页与其它扩展都读不到; 但**同机同用户的进程**
+  若能读你的浏览器 profile 目录, 等价于拿到它们(与上面"不在范围内"第一条同口径)。
+  清理: 选项页把密钥/令牌清空并保存即可(扩展侧不留空值副本)。
 - **`~/.web-toolbox/archive/`**: 可选的按天 JSONL 长归档(0600), 与扩展内数据同源同口径;
   内容是**明文流量**, 含业务参数, 不需要就关掉(`--archive-dir` 指到临时目录或删掉即可)。
   长期运行建议加 `--archive-keep-days N` 自动清理旧日归档(默认 0 = 永不清理, 只认

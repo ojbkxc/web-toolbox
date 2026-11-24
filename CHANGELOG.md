@@ -1,5 +1,17 @@
 # 更新记录
 
+## v1.1.95 — 凭据落点漏写一半: 扩展侧还明文存着两份凭据
+
+- **实证缺口**: SECURITY.md 的"数据落点"只写了 `chrome.storage.local` 存"录制会话"与
+  `~/.web-toolbox/bridge-token`(0600)。但实际扫描代码里的 16 个 `toolbox.*` 键后发现,
+  **扩展在 `chrome.storage.local` 里还明文存着两项凭据**:
+  选项页填的 LLM `api_key`(`toolbox.llm`)与桥接令牌(`toolbox.bridge`)。
+  后果: 用户会以为令牌只有 `bridge-token` 那一份,**删掉文件并不能清掉扩展里这份副本**。
+- **不是新漏洞**(`chrome.storage.local` 同源可读, 网页与其它扩展都读不到), 而是**透明承诺**
+  缺失 —— 用户有权知道自己填的凭据有几份副本、在哪、怎么清。已在 SECURITY.md 写明三点:
+  两项凭据各存在哪个键、与文件那份是**独立副本**、清理方式(选项页清空并保存)。
+- **断言 + 负向验证**: `check_security_claims` 加 4 条(SECURITY 必须写明两个键 + 副本关系 +
+  与实现键名一致); 删掉那段 → 3 条精确红; 恢复后绿。
 ## v1.1.94 — 发布协议声称校验 tag, 实际一次都没校过
 
 - **实证**: AGENTS §4b 白纸黑字写着"校验: check_doc_counts 断言 manifest ↔ CHANGELOG 同版本;

@@ -79,5 +79,24 @@ ok("SECURITY 写明不隐藏 debugger 黄条", /黄条/.test(SEC), "未提黄条
 }
 
 
+// ---- 7. 凭据落点必须写明(v1.1.95) ----
+// 实证缺口: SECURITY.md 的"数据落点"只写了"录制会话", 而扩展在 chrome.storage.local 里还存着
+// 两项**凭据**: 选项页填的 LLM api_key(toolbox.llm)与桥接令牌(toolbox.bridge)。用户会以为
+// 令牌只在 ~/.web-toolbox/bridge-token(0600)那一份, 不知道扩展侧还有独立副本、删文件不清它。
+{
+  const sec = read("SECURITY.md");
+  ok("SECURITY 写明 LLM api_key 存在 chrome.storage.local",
+    /toolbox\.llm/.test(sec) && /api_key/.test(sec), "缺 toolbox.llm 落点说明");
+  ok("SECURITY 写明桥接令牌存在 chrome.storage.local",
+    /toolbox\.bridge/.test(sec), "缺 toolbox.bridge 落点说明");
+  ok("SECURITY 说明这是两份独立副本(删文件不清扩展侧)",
+    /两份|独立副本/.test(sec), "未说明副本关系");
+  // 与实现核对: 这两个键确实在代码里被用作存储键(防文档写了实现没有)
+  const common = read("common.js");
+  const options = read("options/options.js");
+  ok("实现里确实是这两个键",
+    /KEY_LLM\s*=\s*"toolbox\.llm"/.test(common) && /KEY_BRIDGE\s*=\s*"toolbox\.bridge"/.test(options),
+    "文档与实现键名不一致");
+}
 console.log(fails ? `=== security claims FAIL: ${fails} ===` : "=== security claims PASS ===");
 process.exit(fails ? 1 : 0);
