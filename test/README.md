@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 82 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 83 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -128,6 +128,8 @@ node test/check_xxx.js        # 单跑一个
 | bridge/test-py-run | **PY 导出物真实运行**(本机有 python 才跑, 否则 SKIP): 默认导出必须启动到"发请求"这一步(不因 base_url 为 None 而 TypeError)、失败原因必须是网络层、改 main 的 base_url 后仍能跑、step 用 `base_url or <origin>` 回退、注入尝试不产生 PWNED 副作用。负向验证过: 回退 base_url 语义立刻 5 条红(v1.1.99) | v1.1.99 |
 
 | check_diag_bounds | **AGENTS §1.7 第三项: 诊断日志有界**(R82 只补了全录/时间序, ③ 此前零闸门): 常量就是承诺值(1000 条/512KB)/条数界真触发/字节界真触发(长消息下条数先于 1000 停下, 否则是死代码)/单条 message 截 500/字段集仅元信息/坏输入不抛/闸门自证用 999 与 1001 两侧样本证明界在 1000。三项负向验证过(v1.2.3) | v1.2.3 |
+
+| check_skill_set | **AI 技能集守恒**(AGENTS §5 ask-first): 技能 name 集合必须与基线 `skill-set.json` 一致 —— 新增/移除都会红, 必须在同一次改动里更新基线(那次更新就是"显式声明", 会出现在 review diff 里); 另验每个技能都声明 buildPrompt。实测注入第 11 个技能时其余 4 个 AI 闸门全绿, 只有它能拦(v1.2.4) | v1.2.4 |
 
 ## 维护约定
 

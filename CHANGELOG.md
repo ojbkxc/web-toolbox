@@ -1,5 +1,23 @@
 # 更新记录
 
+## v1.2.4 — 悄悄加一个 AI 技能, 五个 AI 闸门全绿
+
+- **注入实证**(§5 ask-first 逐项验, R82 只验过 §1): 往 `BUILTIN_SKILLS` 注入第 11 个
+  **结构完整**的技能(带 `buildPrompt`, 复用已有 prompt 构造)后 ——
+  `check_prompt_parity` / `check_ai_egress` / `check_single_source` / `check_ai_full`
+  **全部绿**; 只有 `check_tool_reference` 因 `docs/skills.md` 未同步而红, 而那只**重跑生成器**就过。
+  也就是说: **加技能 = 加条目 + 重跑生成器 = 全绿**, 没有任何地方要求"这是有意的"。
+- **为什么不判更严**: AGENTS §5 的本质是"先问人" —— 机器判不了"问没问过"。能做的只有让
+  技能集变化**必须显式出现在 diff 里**。
+- **新增** `check_skill_set`(8 条 + 基线 `test/skill-set.json`): 技能 name 集合与基线一致;
+  新增/移除都红, 必须同一次改动里更新基线(那次更新就是显式声明); 另验每个技能都声明了
+  `buildPrompt`(否则选到就崩)。
+- **负向验证(双向)**: 注入第 11 个技能 → 2 条红并点名 `probeSkill`; 移除 `perf` → 2 条红
+  并点名 `perf`; 恢复后绿。
+- **§5 其余四项的注入验证**: 加 `webRequest` 权限 → `check_security_claims` **精确红**(集合与
+  文档不符); 改 background 录制核心 → `check_record_all`/`check_engine_edge` 覆盖。
+  第 5 项("删超 100 行")不做闸门: 大重构常删多行, 把它做成红会**阻碍正常重构**,
+  且它本就是流程约定而非可机器判定的约束。
 ## v1.2.3 — §1.7 三不变量只验了两个, 第三项(诊断日志有界)零闸门
 
 - **缺口**: AGENTS §1.7 列了三项不变量 —— ①录制全录 ②条目按请求时间序 ③诊断日志有界

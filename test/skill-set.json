@@ -1,0 +1,15 @@
+{
+  "note": "AI 技能集基线: 变化须按 AGENTS §5 先征得同意, 然后更新本文件(那次更新就是显式声明, 会出现在 review diff 里)",
+  "skills": [
+    "assert",
+    "chain",
+    "diagnose",
+    "diffTriage",
+    "doc",
+    "inventory",
+    "perf",
+    "report",
+    "sensitive",
+    "session"
+  ]
+}
