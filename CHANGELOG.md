@@ -1,5 +1,23 @@
 # 更新记录
 
+## v1.3.2 — 两个新套件没进 bridge 的 npm test 聚合
+
+- **实证**: `bridge/package.json` 的 `npm test` 聚合里只有 **7** 个套件, 而 bridge 下实际有
+  **9** 个 —— **R112 新增的 `test-jmx-parse.mjs` 与 R113 新增的 `test-py-run.mjs` 漏在聚合外**,
+  也没有独立 npm script。
+- **后果**: 用户按 `bridge/README` 的指引跑 `npm test` 会**静默漏掉两个套件** —— 而这两个恰恰是
+  "导出物能被真实消费方解析"(JDK XML 解析器 / 真实 python 运行)的验证, 是最近才补上的高价值
+  防线。跑绿了但没跑它们, 比跑红更危险。
+- **为什么 run_all 没暴露**: `test/run_all.js` 是**自己维护套件清单**的(它按 `check_*` 前缀
+  discover + 手写 bridge 列表), 与 `package.json` 的聚合是**两条独立清单** —— 加套件时只更新了
+  前者。同一件事有两份真相, 必然漂。
+- **修**: 聚合补上两个套件(放在 smoke 之前), 并各加独立 script(`jmxParse` / `pyRun`)。
+- **新增闸门** `check_bridge_aggregate`(6 条): ①`npm test` 聚合必须覆盖全部 `test-*.mjs`/`smoke`/
+  `unit`; ②聚合里不得引用不存在的文件(防改名残留); ③每个套件都要有独立 npm script;
+  ④2 组闸门自证。
+- **负向验证(三种)**: 从聚合删 `test-jmx-parse` → 精确点名; 把 `test-py-run` 改成不存在的名字 →
+  精确点名(两者都只报「聚合未覆盖」, 因为"不在聚合里"与"文件名写错"在聚合视角是同一症状);
+  删掉 `jmxParse` script → 精确点名。恢复后绿。
 ## v1.3.1 — README 讲了桥接原理, 唯独没说要填什么地址
 
 - **实证**: README 的桥接段写着"传输走本地 WebSocket(扩展主动拨出), 令牌鉴权" —— 但整篇

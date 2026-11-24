@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 86 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 87 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -136,6 +136,8 @@ node test/check_xxx.js        # 单跑一个
 | check_readme_tree | **README 文件结构树 ↔ 实际文件**: 树里每项必须存在(幽灵)、实际关键项(.js/.json/目录)必须都画进树(漏画)、树里不得写死 check_*/e2e_* 计数(会漂)。实测曾漏画 bridge/、samples/、bridge-client.js 等关键项, 且把 check_* 计数写死成旧值(v1.3.0) | v1.3.0 |
 
 | check_options_docs | **选项页配置项的"填什么"必须在 README 说清**: 目标域名 / AI 接口地址(默认 8787) / 桥接地址(`ws://127.0.0.1:9280/ext`) / 桥接令牌(`bridge-token`) —— 判据要求给**具体默认值或形态**, 只写"配置一下"判红。实测补过桥接地址与令牌来源(v1.3.1) | v1.3.1 |
+
+| check_bridge_aggregate | **bridge 的 npm test 聚合必须覆盖全部套件**: test-*.mjs/smoke/unit 每个都要进 `npm test`、聚合里不得引用不存在的文件、每个套件都要有独立 npm script。实测 R112/R113 新增的两个套件漏在聚合外(v1.3.2) | v1.3.2 |
 
 ## 维护约定
 
