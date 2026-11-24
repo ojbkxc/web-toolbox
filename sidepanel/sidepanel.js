@@ -373,7 +373,7 @@ function renderList() {
     // 先一次性写 innerHTML, 再 appendChild 事件节点:
     // innerHTML += 会整串重新解析, 之前 append 的 checkbox 被"重建"且 DOM onclick 属性
     // 不进序列化 → 勾选框点了没反应、还冒泡成"选中条目"(实测踩过)。
-    div.innerHTML = `<span class="m ${e.method}">${e.method}</span><span class="u">${escHtml(shortPath(e))}</span>${pickMark}${isPre ? '<span class="dyn" style="color:#1a73e8" title="登录前置">🔐</span>' : (hasDyn ? '<span class="dyn">⚡</span>' : "")}${msHtml}<span class="st ${stCls}">${e.status}</span>`;
+    div.innerHTML = `<span class="m ${methodClass(e.method)}">${escHtml(e.method)}</span><span class="u">${escHtml(shortPath(e))}</span>${pickMark}${isPre ? '<span class="dyn" style="color:#1a73e8" title="登录前置">🔐</span>' : (hasDyn ? '<span class="dyn">⚡</span>' : "")}${msHtml}<span class="st ${stCls}">${e.status}</span>`;
     // 键盘可达性: title 只有鼠标 hover 能读; aria-label 屏幕阅读器/键盘聚焦时朗读。
     // role="button" + tabindex 让条目本身可 Tab 聚焦, Enter 触发选择(等价 div.onclick)。
     // Tab 停留点膨胀是已记录取舍: 30 条录制=30 个 Tab 停留点, 键盘用户过列表要按 30 次。
@@ -840,7 +840,7 @@ function showLoadTest(e) {
       <label style="margin-left:10px">总次数 <input type="number" id="ltTotal" value="50" min="1" max="2000" style="width:72px" aria-label="总请求次数"></label>
     </div>
     <div class="kv"><div class="acts"><button class="btn warn" id="ltRun" aria-label="开始冒烟压测(向服务端真实发请求)">▶ 开始冒烟</button>
-      <span class="badge-txt">会向服务端真实发 ${e.method} 请求, 请确认环境可承受</span></div></div>
+      <span class="badge-txt">会向服务端真实发 ${escHtml(e.method)} 请求, 请确认环境可承受</span></div></div>
     <div class="kv"><h4 id="kv-ltr">结果</h4><pre id="ltOut" style="background:#0d1117;color:#3fb950;max-height:70vh" role="status" aria-live="polite">待运行…</pre></div>
     <div class="kv"><span class="badge-txt">页面上下文快速验证(会话永远有效), 数字偏保守——浏览器同域连接池有限, 并发>6 时含浏览器排队;严肃压测请导 JMX</span></div>
     <div class="badge-txt err" id="ltErr" role="alert"></div>`;
@@ -1564,6 +1564,11 @@ $("optAutoRelogin").addEventListener("change", () => updatePreludeUi());
 $("optTrim").addEventListener("change", () => updateTrimUi());
 
 // ---------- 工具 ----------
+// HTTP 方法 → 样式类名。**白名单**: e.method 是 CDP 给的任意字符串(服务端可自定义方法名),
+// 直接当类名用会带进 HTML 属性上下文 —— 这里只认常见方法, 其余回退 neut(无样式但安全)。
+const METHOD_CLASSES = new Set(["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]);
+function methodClass(m) { return METHOD_CLASSES.has(String(m)) ? String(m) : "neut"; }
+
 function escHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -1791,7 +1796,7 @@ async function aiBuildAsserts() {
     chrome.storage.local.set({ "toolbox.aiAsserts": Array.from(map.entries()).map(([k, v]) => ({ path: k, asserts: v })) }, () => {});
     setRecStatus(`✓ 已生成 ${map.size} 组接口断言 (跳过重复 ${seen.size - map.size} 个, 失败 ${failed} 个)。链路重放时自动生效。`, "ok");
     out.innerHTML = `<span class="hd2">AI 业务断言</span>\n` + Array.from(map.entries()).map(([k, v]) =>
-      `${escHtml(k)}\n  ` + v.map((a) => `${a.type} ${escHtml(a.target)} ${escHtml(a.expect || "")}`).join("\n  ")).join("\n\n");
+      `${escHtml(k)}\n  ` + v.map((a) => `${escHtml(a.type)} ${escHtml(a.target)} ${escHtml(a.expect || "")}`).join("\n  ")).join("\n\n");
   } catch (err) {
     setRecStatus("AI 断言生成异常: " + (err && err.message ? err.message : err), "err");
   } finally {

@@ -1,5 +1,21 @@
 # 更新记录
 
+## v1.1.96 — 远程可控的 HTTP 方法名裸拼进扩展 DOM(注入面)
+
+- **实证缺口**: 侧栏列表行与冒烟面板把 `e.method` **裸拼进 innerHTML**。`method` 来自 CDP
+  的 `requestWillBeSent.request.method` —— 它**不是枚举**, 服务端/客户端可自定义任意字符串。
+  探针: 传入 `GET<img src=x onerror=alert(1)>` 时, 拼出的 DOM 里出现**可执行的 img 标签**。
+  同类还有 AI 断言列表的 `a.type`(同行 `target`/`expect` 都转义了, 只漏 `type`)。
+- **危害不是理论**: 扩展上下文里的脚本能调 `chrome.debugger` / `chrome.cookies` /
+  `chrome.scripting` —— 等于把「任意页面读取 + 任意页面操作 + Cookie」交给一个被录制的响应。
+- **修**: `escHtml(e.method)` / `escHtml(a.type)`; `e.method` 当 CSS 类名的用法改走
+  `methodClass()` **白名单**(GET/POST/... 之外一律回退 `neut`) —— 属性上下文同样不能放裸值。
+- **新增闸门** `check_dom_escape`(9 条断言): 扫三个页面脚本的全部 innerHTML 插值, 判据精确到
+  **形态**(escHtml 包装 / 白名单包装 / 数字字段 / 纯长度与数字运算 / 已构造的 `*Html` 片段 /
+  只出字面量的三元 都放行), 8 组自证 + `escHtml` 五字符覆盖检查。
+  **为什么判据要这么细**: 第一版按"子串里有没有字段"判, 造出 15 条假红(数字计数、已转义片段
+  全被判危险) —— 假红会让闸门被关掉, 那才是真损失。
+- **负向验证**: 回退 method 转义 → 红并点名行号; 回退 a.type → 红; 恢复后绿。
 ## v1.1.95 — 凭据落点漏写一半: 扩展侧还明文存着两份凭据
 
 - **实证缺口**: SECURITY.md 的"数据落点"只写了 `chrome.storage.local` 存"录制会话"与
