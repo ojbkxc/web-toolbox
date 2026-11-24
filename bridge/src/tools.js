@@ -494,7 +494,11 @@ export function registerTools(server, hub, ctx) {
 
   register("tab_list", {
     title: "列出标签页",
-    description: "列出当前 Chrome 的标签页(id/标题/URL/是否活动)。",
+    description:
+      "列出当前 Chrome 的标签页(id/标题/URL/是否活动)。"
+      + "⚠ url 可能缺失: 浏览器只把 url 给已授权站点(域名授权或 activeTab 生效)的标签页,"
+      + " 其余标签页只能给 id/标题 —— 拿到空 url 不代表读取失败, 需要目标页 url 时先用 net_hosts"
+      + " 或 page_snapshot(它会先解析当前活动页)。",
     inputSchema: {},
     outputSchema: {
       total: z.number(),

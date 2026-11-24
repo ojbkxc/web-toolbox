@@ -42,7 +42,22 @@ const tools = names.map((n, i) => {
   const end = i + 1 < names.length ? src.indexOf(`register("${names[i + 1]}"`) : src.length;
   const block = src.slice(start, end);
   const title = (block.match(/title:\s*"([^"]*)"/) || [])[1] || n;
-  const desc = (block.match(/description:\s*(?:"([^"]*)"|\n?\s*"([^"]*)")/) || [])[1] || "";
+  // description 可能是多行拼接(`"a" + "b" + "c"`), 只取第一个字面量会把它截成第一段;
+  // 这里从 description: 起收集后续连续的字面量(允许 + 与换行), 再拼起来。
+  const desc = (() => {
+    const at = block.indexOf("description:");
+    if (at < 0) return "";
+    // 截到下一个顶层字段(title/inputSchema/outputSchema/annotations)之前
+    const rest = block.slice(at + "description:".length);
+    const stop = rest.search(/\n\s*(title|inputSchema|outputSchema|annotations)\s*:/);
+    const region = stop >= 0 ? rest.slice(0, stop) : rest.slice(0, 1200);
+    // 收集所有双引号字面量(跳过转义)
+    const parts = [];
+    const re = /"((?:[^"\\]|\\.)*)"/g;
+    let m;
+    while ((m = re.exec(region))) parts.push(m[1]);
+    return parts.join("");
+  })();
   const isControl = /controlGuard\("/.test(block);
   const isStructured = /return structured\(|structuredContent:/.test(block);
   // 参数: inputSchema 顶层字段 + describe

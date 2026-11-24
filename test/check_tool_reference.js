@@ -89,5 +89,29 @@ if (fs.existsSync(gen) && fs.existsSync(target)) {
   }
 }
 
+
+// ---- 生成器必须覆盖多行拼接的 description(v1.2.5) ----
+// 实证: tab_list 的描述是 `"a" + "b" + "c"` 多行拼接, 而生成器只取第一个字面量 →
+// 文档里只剩第一段。**逐字节一致闸门发现不了**: 生成物与入库文件都由同一份错抽取产生。
+// 与 R79(生成器正则漏驼峰)同族: 同源生成只能防手改, 防不了抽取器自身的漏。
+{
+  const toolsSrc = fs.readFileSync(path.join(ROOT, 'bridge', 'src', 'tools.js'), 'utf8');
+  // 找一个 description 跨多行拼接的工具, 断言其**最后一段**出现在文档里
+  const multi = [];
+  for (const m of toolsSrc.matchAll(/register\("([^"]+)",[\s\S]{0,400}?description:\s*\n\s*"([^"]+)"([\s\S]{0,400}?)inputSchema:/g)) {
+    const tailLiterals = [...m[3].matchAll(/\+\s*"([^"]{10,})"/g)].map((x) => x[1]);
+    if (tailLiterals.length) multi.push({ name: m[1], tail: tailLiterals[tailLiterals.length - 1] });
+  }
+  ok('存在多行拼接 description 的工具(否则本条断言无意义)', multi.length > 0, multi.length);
+  const doc = fs.readFileSync(target, 'utf8');
+  // 每段尾部字面量(去掉引号与空白)都应能在文档里找到
+  const missing = multi.filter((x) => {
+    const probe = x.tail.replace(/["“”]/g, '').slice(0, 12);
+    return probe.length >= 6 && !doc.includes(probe);
+  });
+  ok('多行拼接 description 的**每一段**都进了文档(不只剩第一段)', missing.length === 0,
+    missing.map((x) => x.name + ': ' + x.tail.slice(0, 20)));
+}
+
 console.log(fails ? `=== tool ref FAIL: ${fails} ===` : "=== tool ref PASS ===");
 process.exit(fails ? 1 : 0);
