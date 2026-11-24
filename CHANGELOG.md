@@ -1,5 +1,19 @@
 # 更新记录
 
+## v1.2.2 — LOCAL 错误码的 hint 有一半是空话
+
+- **审计**(R87 只钉了 3 个 wire 码, LOCAL 侧从未查): 4 个本地码里
+  **BAD_PAYLOAD** 写的是"检查扩展与 bridge 版本是否一致" —— 但**没说怎么检查**, 用户只能猜;
+  同族的 UNKNOWN_METHOD / PROTOCOL_MISMATCH 早已指向 `bridge_status` 的具体字段。
+- **修**: BAD_PAYLOAD 改为指向 `bridge_status` 的 `extension.version/protocol` 与
+  `bridge.version/protocol`, 并给出"两者相同则说明是字段漂移, 把错误连工具名反馈"的下一步。
+- **顺带发现语义不符**: BAD_STATE 的默认 hint 写的是"先录制再重放", 而它**唯一的实际用途**
+  是导出"产物过大"(拒绝返回半截脚本)。已改为覆盖真实场景并给出具体入口
+  (`rec_start` / 缩小导出范围 / `maxChars`), 不再硬套一种场景。
+- **断言 + 负向验证**: `check_bridge_errors` 补 2 条(LOCAL 码的 hint 必须含具体入口 + 至少 4 个码);
+  把 BAD_PAYLOAD 改回空话 → 精确点名; 把 BAD_STATE 改回纯"按提示" → 精确点名; 恢复后绿。
+  判据同时承认"按错误消息里的动作执行"这类形态(但必须附至少一个具体工具名/字段名/命令),
+  否则会把合理的兜底文案误判成空话。
 ## v1.2.1 — 尾点域名能存进清单, 却永远匹配不上任何页面
 
 - **实证**: 选项页手动输入 `example.com.`(合法 FQDN 写法, RFC 1034 根区点) —— 通过所有输入校验

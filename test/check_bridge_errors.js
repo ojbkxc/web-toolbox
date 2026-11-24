@@ -89,6 +89,30 @@ const ok = (name, cond, got) => {
   }
 }
 
+
+// ---- LOCAL 码的 hint 也必须可执行(v1.2.2) ----
+// R87 只钉了 3 个 wire 码。审计发现 BAD_PAYLOAD 写的是"检查扩展与 bridge 版本是否一致"——
+// 但**没说怎么检查**(用户只能猜), 而同族的 UNKNOWN_METHOD/PROTOCOL_MISMATCH 早已指向
+// bridge_status 的具体字段。判据: 每条 LOCAL hint 必须给出可执行入口(工具名/字段名/命令)。
+{
+  const errSrc2 = fs.readFileSync(path.join(ROOT, "bridge", "src", "errors.js"), "utf8");
+  const block2 = errSrc2.slice(errSrc2.indexOf("LOCAL_HINTS"), errSrc2.indexOf("};", errSrc2.indexOf("LOCAL_HINTS")));
+  const localCodes = [...new Set([...block2.matchAll(/\[LOCAL\.(\w+)\]/g)].map((m) => m[1]))];
+  // "按错误消息里的具体动作执行"也是可执行指令(这类码的本质就是照消息做), 但必须同时
+  // 给出至少一个具体入口(工具名/字段名/命令), 不能只说"按提示"。
+  const actionableRe = /bridge_status|doctor|net_list|net_get|tools\/list|inputSchema|rec_start|chain_replay|version|protocol|--[a-z]|maxChars|statusMin/;
+  const vague = [];
+  for (const c of localCodes) {
+    // 取该码到下一个码(或块尾)之间的文本 —— hint 可能跨行拼接
+    const from = block2.indexOf("[LOCAL." + c + "]");
+    const nextIdx = block2.indexOf("[LOCAL.", from + 5);
+    const seg = block2.slice(from, nextIdx > 0 ? nextIdx : block2.length);
+    if (!actionableRe.test(seg)) vague.push(c);
+  }
+  ok(`LOCAL 码的 hint 都给出可执行入口(${localCodes.length} 个)`, vague.length === 0, vague);
+  ok("LOCAL 码至少 4 个(BAD_ARGS/NO_ENTRIES/BAD_PAYLOAD/BAD_STATE)", localCodes.length >= 4, localCodes);
+}
+
 // ---- bridge_status 并列返回两端版本(v1.1.74) ----
 {
   const tSrc = fs.readFileSync(path.join(ROOT, "bridge", "src", "tools.js"), "utf8");

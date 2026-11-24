@@ -67,8 +67,16 @@ export const LOCAL = {
 export const LOCAL_HINTS = {
   [LOCAL.BAD_ARGS]: "按工具 schema 补参数; 不认识的参数名以 tools/list 里的 inputSchema 为准",
   [LOCAL.NO_ENTRIES]: "先用 net_list 看当前抓到什么; 空的话确认已开始录制且域名已授权",
-  [LOCAL.BAD_PAYLOAD]: "扩展返回的数据形态不符合预期, 检查扩展与 bridge 版本是否一致",
-  [LOCAL.BAD_STATE]: "按提示先完成前置步骤(例如先录制, 再重放)",
+  [LOCAL.BAD_PAYLOAD]:
+    "扩展返回的数据形态与预期不符: 调 bridge_status 对比 extension.version/protocol 与"
+    + " bridge.version/protocol, 两者应相同; 不同则扩展在 chrome://extensions 重新加载、bridge 重启。"
+    + " 若两者一致, 说明是字段漂移, 把这条错误连同工具名反馈",
+  // 这类码的本意是"当前状态不允许这次调用" —— 错误消息里会给出具体动作(缩小过滤范围 /
+  // 先开录制 等), hint 只做兜底指向: 说清"照消息做"+ 两个最常见的前置动作, 而不是
+  // 硬套某一种场景(旧文案只写"先录制再重放", 与真正的用途"产物过大"完全不符)。
+  [LOCAL.BAD_STATE]:
+    "按错误消息里的具体动作执行(常见前置: 先 rec_start 开始录制 / 缩小导出范围后重试);"
+    + " 见 tools/list 里对应工具的 schema 与参数说明",
 };
 
 const FALLBACK = {
