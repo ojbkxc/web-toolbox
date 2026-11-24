@@ -320,8 +320,10 @@ function extHello(extra = {}) {
     });
   });
   ext.ws.close();
-  // hub 广播 ext.status 是断线即推(事件驱动), 正常 <100ms; 600ms 兜底抗 CI 抖动
-  const st = await Promise.race([status, sleep(600).then(() => null)]);
+  // hub 广播 ext.status 是断线即推(事件驱动), 正常 <100ms 就 resolve。
+  // 兜底上限**只影响失败路径** —— 正常情况根本等不满, 所以放宽到 2500ms 毫无性能代价;
+  // 反过来把它收到 600ms(曾以为能"省时间")只会削掉并发时的抗抖余量, 换来假红。
+  const st = await Promise.race([status, sleep(2500).then(() => null)]);
   ok("扩展断线 → 代理收到 ext.status(online:false)", st && st.data.online === false, st);
   proxy.ws.close();
   await hub.stop();

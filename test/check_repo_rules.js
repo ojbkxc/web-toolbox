@@ -86,7 +86,7 @@ ok("process.exit(0) 只在文件末尾", earlyExit.length === 0, earlyExit);
 // 5 次全量跑里 2 次假红。测试自己起的服务必须: ①先探空闲端口; ②结束时等端口真关。
 {
   const bad = [];
-  for (const rel of ["bridge/test-auth.mjs", "bridge/test-doctor.mjs", "bridge/test-reconnect.mjs", "bridge/test-perf.mjs"]) {
+  for (const rel of ["bridge/test-auth.mjs", "bridge/test-doctor.mjs", "bridge/test-reconnect.mjs", "bridge/test-perf.mjs", "bridge/smoke.mjs"]) {
     const p = path.join(ROOT, rel);
     if (!fs.existsSync(p)) continue;
     const src = fs.readFileSync(p, "utf8");

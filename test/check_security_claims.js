@@ -66,6 +66,18 @@ ok("bridge/package.json 存在(桥接独立包)", fs.existsSync(path.join(ROOT, 
 // ---- 6. SECURITY 必须声明"不做"清单(避免高估边界) ----
 ok("SECURITY 有'不做'清单", /## 已知的"不做"|## 已知的“不做”/.test(SEC), "缺'不做'小节");
 ok("SECURITY 写明不隐藏 debugger 黄条", /黄条/.test(SEC), "未提黄条");
+// ---- 6. 非环回监听必须在启动输出里警告(v1.1.89) ----
+// SECURITY.md 说"改成 0.0.0.0 等于把浏览器控制面挂到网络上, 令牌成为唯一防线", 但此前
+// 启动输出一个字都没提 —— 只有读过 SECURITY.md 的人知道, 而多数人不读。
+{
+  const src = fs.readFileSync(path.join(ROOT, 'bridge', 'src', 'index.js'), 'utf8');
+  ok('daemon 启动时对非环回监听给出警告',
+    /listenloopback|loopback/.test(src) && /唯一防线|局域网/.test(src), '缺少非环回监听警告');
+  // 判据必须按 host 值区分, 不能无条件打印(否则回环用户天天看无意义警告)
+  ok('警告按 host 判定(环回不打)',
+    /opts\.host === "127\.0\.0\.1"/.test(src) && /!loopback/.test(src), '警告未按 host 条件化');
+}
+
 
 console.log(fails ? `=== security claims FAIL: ${fails} ===` : "=== security claims PASS ===");
 process.exit(fails ? 1 : 0);

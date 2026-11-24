@@ -115,6 +115,16 @@ async function runDaemon() {
 
   log(`模式: daemon (常驻) · 协议版本 ${protocol.PROTOCOL_VERSION}`);
   log(`扩展应连接: ws://${opts.host}:${opts.port}${protocol.WS_PATH}`);
+  // 非环回监听是一个高风险选择(SECURITY.md: "等于把浏览器控制面挂到网络上"), 但此前启动
+  // 输出里一个字都没提 —— 用户只在读了 SECURITY.md 之后才知道, 而多数人不读。
+  // 这里在启动时明说: 暴露了什么、令牌是唯一防线、怎么退回。
+  {
+    const loopback = opts.host === "127.0.0.1" || opts.host === "::1" || opts.host === "localhost";
+    if (!loopback) {
+      log(`⚠ 监听地址 ${opts.host} 不是回环 —— 局域网/公网上的其他机器都能连这个端口;`
+        + ` 令牌是唯一防线(令牌文件权限 0600, 别外发)。只想本机用请去掉 --host 或写 --host 127.0.0.1`);
+    }
+  }
   log(`令牌来源: ${source}`);
   log(`控制类工具: ${opts.allowControl ? "启用" : "关闭(加 --allow-control)"}`);
   log("等待扩展连接... (Ctrl+C 退出)");

@@ -533,15 +533,40 @@ await waitPort(PORT);
   // 稳定性: 端口随机(固定端口会撞上一次没退干净的 daemon), 就绪靠轮询握手而不是固定 sleep。
   {
     console.log("\n[7] 控制开关不一致");
-    const DPORT = 9500 + Math.floor(Math.random() * 400);
+    // 端口探测(R96 教训): 随机段会撞残留 daemon —— 全量并发下表现为 initialize 超时假红。
+    const DPORT = await (async () => {
+      const net2 = await import("node:net");
+      for (let k = 0; k < 100; k++) {
+        const p = 9500 + Math.floor(Math.random() * 800);
+        const free = await new Promise((resolve) => {
+          const srv = net2.createServer();
+          srv.once("error", () => resolve(false));
+          srv.once("listening", () => srv.close(() => resolve(true)));
+          srv.listen(p, "127.0.0.1");
+        });
+        if (free) return p;
+      }
+      throw new Error("找不到空闲端口");
+    })();
     const daemonUrl = `ws://127.0.0.1:${DPORT}${protocol.WS_PATH}`;
     const daemon = spawn(process.execPath, [ENTRY, "--daemon", "--port", String(DPORT), "--quiet"], {
       env: { ...process.env, WEB_TOOLBOX_TOKEN: TOKEN }, stdio: ["ignore", "ignore", "ignore"], windowsHide: true,
     });
+    // 就绪 = 端口在监听(不在这里做 WS 握手: 握手慢会挤占后面 initialize 的 8s 预算,
+    // 表现为"mcp timeout initialize"这种完全指不出真因的假红)。
     let up = false;
-    for (let i = 0; i < 30 && !up; i++) {
-      await sleep(200);
-      try { const probe = await connect(TOKEN, PROTOCOL_VERSION, daemonUrl); probe.ws.close(); up = true; } catch { /* 还没起 */ }
+    {
+      const net3 = await import("node:net");
+      for (let i = 0; i < 60 && !up; i++) {
+        up = await new Promise((resolve) => {
+          const sock = net3.connect({ host: "127.0.0.1", port: DPORT });
+          const done = (v) => { sock.destroy(); resolve(v); };
+          sock.on("connect", () => done(true));
+          sock.on("error", () => done(false));
+          setTimeout(() => done(false), 200);
+        });
+        if (!up) await sleep(100);
+      }
     }
     if (!up) {
       ok(false, "独立 daemon 就绪(6s 内未监听端口 " + DPORT + ")");
