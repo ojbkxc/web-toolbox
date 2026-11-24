@@ -106,6 +106,51 @@ ok("process.exit(0) 只在文件末尾", earlyExit.length === 0, earlyExit);
     /badLines\s*=\s*lines\.filter/.test(ra) && /FAIL\|✗/.test(ra), "仍是末 3 行模式");
 }
 
+// ---------- C5: 环境跳过(SKIP)必须明说原因, 且不伪装通过 ----------
+// AGENTS §2: "环境限制用 skip 标注, 不伪装通过" —— 此前零机检。判据两条:
+//   ①每个真实 SKIP 打印点(非注释)附近必须有 console.log/warn 输出(否则就是静默跳过);
+//   ②含 SKIP 的套件必须有统一退出 `process.exit(fail ? 1 : 0)` 或 `exit(0)`(跳过不能变红也不能假绿)。
+// 注意: 注释里的 SKIP(如"没装依赖时 run_all 会打 SKIP(env)")不算打印点 —— 第一版判据把
+// 注释当代码, 误报了 4 个文件。
+{
+  const skipBad = [];
+  const skipFiles = [];
+  (function walkSkip(d) {
+    for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+      if (["node_modules", ".git", "samples", "icons", "lib"].includes(ent.name)) continue;   // lib 提供 skip 函数, 不是套件
+      const p2 = path.join(d, ent.name);
+      if (ent.isDirectory()) { walkSkip(p2); continue; }
+      if (!/\.(js|mjs)$/.test(ent.name)) continue;
+      const src2 = fs.readFileSync(p2, "utf8");
+      if (!/SKIP\(env\)/.test(src2)) continue;
+      const rel2 = path.relative(ROOT, p2).replace(/\\/g, "/");
+      const l2 = src2.split(/\r?\n/);
+      let realPoints = 0;
+      for (let i = 0; i < l2.length; i++) {
+        const t2 = l2[i].trim();
+        if (/^(\/\/|\*)/.test(t2)) continue;          // 注释里的 SKIP 不算
+        if (!/SKIP\(env\)/.test(l2[i])) continue;
+        realPoints++;
+        // console.log 可能跨行(模板字符串), 看前后 2 行
+        const win = l2.slice(Math.max(0, i - 2), Math.min(l2.length, i + 3)).join(" ");
+        if (!/console\.(log|warn)|process\.stdout\.write/.test(win)) {
+          skipBad.push(`${rel2}:${i + 1} 静默跳过(无输出)`);
+        }
+      }
+      if (realPoints > 0) {
+        skipFiles.push(rel2);
+        // 判据收紧(v1.2.8): 必须**条件式退出** `exit(cond ? X : Y)`。
+        // 为什么收紧掉裸 exit(0): 恒 0 会让该文件里所有断言失败都伪装通过 —— 正是
+        // AGENTS 禁止的"不伪装通过"。第一版把 exit(0) 也算合法, 负向验证时裸 exit(0) 被判绿。
+        const exitOk = /process\.exit\([^)]*\?[^)]*:[^)]*\)/.test(src2);
+        if (!exitOk) skipBad.push(`${rel2} 含 SKIP 但没有统一退出(跳过会假红或假绿)`);
+      }
+    }
+  })(ROOT);
+  ok(`含 SKIP 的套件都明说原因且不伪装通过(${skipFiles.length} 个文件)`, skipBad.length === 0, skipBad.slice(0, 4));
+  ok("确实存在 SKIP 机制(否则本条断言无意义)", skipFiles.length >= 3, skipFiles.length);
+}
+
 // ---------- D:// ---------- D:// ---------- D:// ---------- D: git add -A ----------
 const docs = [];
 (function walk(d) {
