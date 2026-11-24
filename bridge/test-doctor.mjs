@@ -71,7 +71,21 @@ try {
   {
     console.log("\n[doctor] 有 daemon(两个令牌 case 共用一个 daemon, 冷启动只付一次)");
 {
-  const PORT = 19732;
+  // 端口探测(R96 同款教训): 固定端口会撞上残留 daemon / 并发套件 → 随机假红。
+  const PORT = await (async () => {
+    const net2 = await import("node:net");
+    for (let i = 0; i < 100; i++) {
+      const p = 19700 + Math.floor(Math.random() * 900);
+      const free = await new Promise((resolve) => {
+        const srv = net2.createServer();
+        srv.once("error", () => resolve(false));
+        srv.once("listening", () => srv.close(() => resolve(true)));
+        srv.listen(p, "127.0.0.1");
+      });
+      if (free) return p;
+    }
+    throw new Error("找不到空闲端口");
+  })();
   PORT_FOR_READY = PORT;
   const daemon = spawn(process.execPath, [ENTRY, "--daemon", "--port", String(PORT), "--quiet",
     "--archive-dir", tmpArchive], {

@@ -81,7 +81,24 @@ ok("process.exit(0) 只在文件末尾", earlyExit.length === 0, earlyExit);
   ok("就绪判定走 TCP 端口探测(不依赖 WS 握手)", bad.length === 0, bad);
 }
 
-// ---------- D:// ---------- D: git add -A ----------
+// ---------- C3: 测试端口必须探测空闲, 且收尾等端口释放 ----------
+// 实证(R96): test-auth 用 "9700+随机" 起 daemon —— 与 34 个僵尸 daemon 占的 9411-9798 撞段,
+// 5 次全量跑里 2 次假红。测试自己起的服务必须: ①先探空闲端口; ②结束时等端口真关。
+{
+  const bad = [];
+  for (const rel of ["bridge/test-auth.mjs", "bridge/test-doctor.mjs", "bridge/test-reconnect.mjs", "bridge/test-perf.mjs"]) {
+    const p = path.join(ROOT, rel);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, "utf8");
+    const spawns = /spawn\(process\.execPath/.test(src) || /new Hub\(/.test(src);
+    if (!spawns) continue;
+    const probesFree = /createServer\(|listen\(0,|findFreePort/.test(src);
+    if (!probesFree) bad.push(rel + "(不探测空闲端口)");
+  }
+  ok("起测试服务的套件都探测空闲端口", bad.length === 0, bad);
+}
+
+// ---------- D:// ---------- D:// ---------- D: git add -A ----------
 const docs = [];
 (function walk(d) {
   for (const ent of fs.readdirSync(d, { withFileTypes: true })) {

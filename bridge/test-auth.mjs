@@ -25,7 +25,23 @@ const ok = (cond, msg) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const PORT = 9700 + Math.floor(Math.random() * 200);
+// 端口策略: 探测出一个**此刻空闲**的端口再起 daemon。
+// 为什么不用"9700+随机": 随机段会撞上僵尸 daemon 或其它并发套件(实测 5 次全量跑里 2 次假红,
+// 根因是 34 个测试残留 daemon 占着 9411-9798)。
+const PORT = await (async () => {
+  const net = await import("node:net");
+  for (let i = 0; i < 100; i++) {
+    const p = 9700 + Math.floor(Math.random() * 1200);
+    const free = await new Promise((resolve) => {
+      const srv = net.createServer();
+      srv.once("error", () => resolve(false));
+      srv.once("listening", () => srv.close(() => resolve(true)));
+      srv.listen(p, "127.0.0.1");
+    });
+    if (free) return p;
+  }
+  throw new Error("找不到空闲端口(9700-10899 全被占?)");
+})();
 const TOKEN = "auth-matrix-tok";
 
 function startDaemon(extra = []) {
@@ -160,7 +176,22 @@ try {
   }
 } finally {
   daemon.kill();
-  await sleep(300);
+  // 等端口真的释放: Windows 上 kill 到端口关闭有间隙, 不等会让下一次运行/下一个套件
+  // 撞上"端口被占" → 表现为随机假红(实测 5 跑 2 红就是这么来的)。
+  {
+    const net = await import("node:net");
+    for (let i = 0; i < 40; i++) {
+      const stillOpen = await new Promise((resolve) => {
+        const sock = net.connect({ host: "127.0.0.1", port: PORT });
+        const done = (v) => { sock.destroy(); resolve(v); };
+        sock.on("connect", () => done(true));
+        sock.on("error", () => done(false));
+        setTimeout(() => done(false), 200);
+      });
+      if (!stillOpen) break;
+      await sleep(100);
+    }
+  }
 }
 
 console.log(`\n=== auth matrix: ${pass} PASS / ${fail} FAIL ===`);
