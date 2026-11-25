@@ -49,6 +49,25 @@ const chain3 = autoDetectChain(entries3);
 const urlLink = chain3.find((c) => c.toParam === "url.token");
 assert(!!urlLink, "URL query 参数关联检测到: " + JSON.stringify(chain3.map((c) => c.toParam)));
 
+// --- 场景3b: 关联截断按【字节】而非字符(v1.3.5) ---
+// 旧实现 `rt.length > 200000` 是 UTF-16 码元, 而录制截断是 204800 **字节** —— 错配后果:
+// ASCII 200001~204800B 录得到却静默不链; CJK 侧反而放宽到 200k 字符(=600KB)。
+const tk = "TK-UNIQUE-9f2a";
+const inBand = '{"tk":"' + tk + '","pad":"' + "a".repeat(200 * 1024 - 40) + '"}';
+const byteIn = Buffer.byteLength(inBand, "utf8");
+assert(byteIn > 200000 && byteIn <= 200 * 1024, `前置: 带内样本字节落在 (200000, 204800]: ${byteIn}`);
+const chIn = autoDetectChain([
+  mk("b0", "GET", "https://host/api/a", { response: inBand }),
+  mk("b1", "POST", "https://host/api/b", { body: '{"tk":"' + tk + '"}' }),
+]);
+assert(chIn.length >= 1, `带内(按字节计)大响应仍可建链(实得 ${chIn.length})`);
+const overBand = '{"tk":"' + tk + '","pad":"' + "a".repeat(200 * 1024) + '"}';
+const chOver = autoDetectChain([
+  mk("c0", "GET", "https://host/api/a", { response: overBand }),
+  mk("c1", "POST", "https://host/api/b", { body: '{"tk":"' + tk + '"}' }),
+]);
+assert(chOver.length === 0, `超 204800B 响应不建链(与录制截断对齐, 实得 ${chOver.length})`);
+
 // --- 场景4: mergeChain AI 优先, 轻量补充 ---
 const autoChain = [
   { from: 0, fromId: "a", fromJsonPath: "data.x", to: 1, toId: "b", toParam: "body.x", var: "V_x" },

@@ -1,5 +1,133 @@
 # 更新记录
 
+## v1.3.6 — 「定长比较」这条断言从没验证过定长, 令牌明文仍会落盘
+
+审计收尾时回头看自己的加固, 发现**两条新修的项没有闸门守着** —— 按仓库规则「改了没闸门等于白改」,
+补上后发现原来那条闸门本身就是假的。
+
+### 假闸门: `/timingSafeEqual/.test(config)` 在旧代码上也绿
+
+- 旧实现: 先 `if (ba.length !== bb.length) return false;` 再 `timingSafeEqual` ——
+  **仍然含 timingSafeEqual**, 所以断言名写着「定长」却从未验证定长。长度侧信道(A1)一直在。
+- 真判据: 先 `createHash` 摘要到固定长度再比, 且**不允许出现长度不等早退**。
+- 新断言同时卡两件事: `/createHash/` 存在 + 长度不等早退**不存在**。
+
+### A2 补闸门: 令牌明文不得无条件打到 stderr
+
+- 判据: `/isTTY/` 存在 **且** 非 TTY 分支指向令牌文件(`请从 ${opts.tokenPath} 读取令牌`)。
+- 两个条件**各自**自证变红(分别去掉 isTTY 守卫、改掉提示文案, 都 FAIL)。
+
+### 证据
+
+| 项 | 命令 | 结果 |
+|---|---|---|
+| A1 闸门(修后) | `node test/check_security_claims.js` | PASS |
+| A1 自证(回退长度早退) | 同上 | **FAIL** → 还原后绿 |
+| A2 自证(去 isTTY 守卫) | 同上 | **FAIL** → 还原后绿 |
+| A2 自证(改提示文案) | 同上 | **FAIL** → 还原后绿 |
+| 全量回归 | `node test/run_all.js` | 88/88 PASS |
+
+## v1.3.5 — 脱敏正则漏 `/` 漏明文, 关联闸门字符/字节错配
+
+两条都是 **已有闸门没盖住的真实缺口**(子代理审计发现, 我逐条实测复现后才改)。
+
+### R6 数据卫生: 标准 base64 被 `/` 切开, 前半段明文外发
+
+- **实证**: `aireport.js` 的 `scrubLong` 字符类 `[A-Za-z0-9_=.+-]` **缺 `/`**。
+  标准 base64 字母表带 `/` —— 一段 69 字符的 base64 在 `/` 处被切成 34 + 35 两段,
+  两段都 <40 所以**都不打码**; 若两侧长度不等(如 34/40), 前半段原样外发。
+  实测 `QUJD…VldY/YWJj…eXo=` 的 `QUJDREVGR0hJSktMTU5PUFFSU1RVVldY`(34字符) 明文进了 prompt。
+- **为什么闸门没拦**: `check_ai_full` 只用**无 `/`** 的长串测打码, 字符类缺什么它测不到。
+- **改法**: 字符类补 `/` 与 `~`(`-` 放末尾保留字面量); `check_ai_full` 新增
+  **带 `/` 的真实 base64** 断言, 且断言的是**前半段不泄漏**(只查后半段会假绿 —— 这个坑我自己踩了一次)。
+
+### R7 关联闸门: 字符数当字节数, ASCII 带内录得到却静默不链
+
+- **实证**: `common.js` 的 `if (rt.length > 200000) continue;` —— `rt.length` 是
+  **UTF-16 码元**, 而录制截断是 204800 **字节**(200KB)。错配后果双向:
+  ASCII 200001~204800B 录得到却静默不链(正是 v1.0.96 注释声称已修的那类回归);
+  CJK 侧反而放宽到 200k 字符(=600KB 字节)。
+- **实测**: 203992B 响应 → 旧代码 0 条链, 新代码 1 条; 204892B → 两条都 0(符合预期)。
+- **改法**: 改为 `if (harByteSize(rt) > 200 * 1024) continue;`(复用同文件 `harByteSize`,
+  与录制侧 `utf8Slice` 同一套字节口径)。`check_auto_chain` 新增场景 3b:
+  带内字节可建链 + 超限不建链, 两条都断言。
+
+### 顺手: 断言基线校对(收紧)
+
+`check_assert_count` 基线停在旧值, 12 个 suite 实际断言数已高于基线 —— 意味着这些文件
+**删掉同等数量断言不会被拦**(与本次主题一致: 貌似存在的闸门其实有洞)。已按实际值重新基线,
+现基线 = 实际, 删断言立即红。
+
+### 待批(AGENTS §5 ask-first, 未实施)
+
+引擎审计发现 5 条, 全落在 `background.js` 录制核心/缓冲/配额裁剪, 需用户批准:
+
+| ID | 问题 | 等级 |
+|---|---|---|
+| R1 | `harvestQueue` 单条 promise 链, `storage.get` 一 reject 则该批**及之后所有**条目永不入库, 且零诊断 | **P0** |
+| R2 | 时间序只按毫秒 `ts` 排序, 亚毫秒 `startTs` 已存在却未参与 —— 同毫秒并发必倒挂, **每次录制都在发生** | **P1** |
+| R3 | 诊断日志 512KB 限用 `JSON.stringify().length`(UTF-16 码元), CJK 下真实 1.44MB(2.75×) | P2 |
+| R4 | 3000 条溢出静默 `shift()` 无诊断; base64 体换占位符无 `responseBase64`; stop 不 flush pending | P1 |
+| R5 | onDetach 不回 `idle` 且徽章继续显示 REC; 冷启动窗口内 response/finished 丢弃致 pending 残留 | P1 |
+
+## v1.3.4 — 默认部署下错误码全丢失, 标错全降级成「未知错误」
+
+- **实证(子代理用真实 Hub 复现)**: 起一个 `allowControl=false` 的 Hub + 一个代理连接,
+  代理发 `QUERY page.click`, daemon 回帧为
+  `{"type":"res","id":"q1","ok":false,"error":"控制类方法 page.click 未启用..."}` ——
+  **`"code" in frame === false`**。再喂给 `errors.js:fromException`(`code = e.code || "error"`),
+  得到 `错误[error]: …` + FALLBACK 的「把这条错误与 doctor 输出一起反馈」,
+  而不是本该有的 `错误[forbidden]` + 「用 --allow-control 重启」。
+- **根因(两处丢码叠加)**:
+  1. `hub.js` 回代理的失败 RES 帧只带 `error` 文案、**不带 `code`**;
+  2. `index.js` 代理侧收到 RES 后 `new Error(f.error)` —— 裸 Error 无 code。
+  两者任一存在都足以让码丢失。默认部署(daemon+proxy)下**所有**
+  `forbidden/timeout/unknown_method/ext_error` 都命中 FALLBACK, AI 客户端靠码分流重试全部失效。
+- **为何现有测试没暴露**: `unit.mjs` 测的是 `hub.request()` **直抛**的 `e.code`(没走代理转发),
+  `smoke.mjs` 靠 `tools.js` 本地 `daemonAllowControl` 兜住 —— 都没盖到「代理传错」这条路径。
+- **改法**: `hub.js` 失败 RES 帧补 `code: (e && e.code) || ERR.EEXT`;
+  `index.js` 改 `Object.assign(new Error(...), { code: f.code || "error" })`;
+  `unit.mjs` 新增「代理失败回包带 code」断言, `test-auth.mjs` 同时断言 `code === FORBIDDEN`。
+
+### 同批安全加固(授权防御性评估, 均为本机自测)
+
+- **A4 帧上限**: `hub.js` 的 `WebSocketServer` 未设 `maxPayload` → 沿用 ws 默认 **100MB**,
+  且 `JSON.parse(raw)` 发生在**鉴权之前** → 本机任意非特权进程(或非回环下的网络端)
+  可用大帧把持有浏览器连接的 daemon 打 OOM。改为 `maxPayload: 8MB`(抓包帧远小于此)。
+- **A1 长度侧信道**: `safeEqual` 先比长度、不等即 `return false` → 可用计时差探出令牌长度。
+  改为**先 sha256 摘要到定长再 `timingSafeEqual`**, 连长度分支都去掉。
+- **A2 令牌落盘**: 首次生成令牌时把**完整明文**打到 stderr —— 开机自启常重定向到
+  文件/journald, 令牌就落盘了。改为**仅 `stderr.isTTY` 时打全文**, 否则指向令牌文件。
+- **A3 告警覆盖面**: 非回环告警只在 daemon 路径打, **单进程回落路径连一个字都没提**。
+  提为 `warnNonLoopback()`, 两条启动路径都调; 文案补「传输是明文 ws://、令牌裸传可嗅探」。
+  **未采纳**启动即 `exit(3)`(会改变既有用法, 属策略变动)。
+- **A5 断开错误码**: 代理侧 daemon 断连时抛裸 `Error` → 在途请求丢码。补 `code: NOT_CONNECTED`。
+
+> 未做的两项(已核实**无缺陷**, 仅记录): 路径穿越——`archive.js` 的文件名一律先过
+> `/^harvest-\d{4}-\d{2}-\d{2}\.jsonl$/` 白名单且来源于 `readdirSync`; 工具面无任何
+> 「用户输入→文件路径」拼装点。shell 注入——全仓库无 `shell:true`/`execSync` 字符串命令,
+> 所有 `spawn/spawnSync` 均数组传参。
+
+## v1.3.3 — 两条断言挂着 `|| true` 恒真兜底, 闸门形同虚设
+
+- **实证**: 全仓扫 `test/` 里的恒真兜底, 命中两处, 且都在断言位置:
+  - `test/check_doc_counts.js:137` — `(...|| true)` 包着「troubleshooting 的 doctor 项数」检查;
+  - `test/check_replay_smoke.js:30` — `(... === false || true)` 包着「超时 text 含说明」检查。
+  两处都用 `node -e` 直接求值验证过: **传入不匹配的输入仍返回 true**, 即断言永不失败。
+- **根因(不是笔误, 是放水)**: `replay.js:78` 的超时文案是
+  `timeout: 单条请求 0s 无响应(接口挂起?)`(测试传 `timeoutMs=200`, `Math.round(200/1000)=0`)。
+  原断言写 `/200s|0s|挂起/.test(text) === false`, 而文案**恰好含 `0s`** → 断言必然为假。
+  当时没有修断言, 而是加 `|| true` 让它变绿 —— 这正是 AGENTS §1.2 明令禁止的形态。
+- **改法**: 两条改成真正表达意图的断言(超时文案须以 `timeout:` 开头且含 `无响应`;
+  troubleshooting 须含带前提的 `有 daemon 时 18 项`), 并**新增元闸门**
+  `test/check_no_tautology.js`: 扫全部测试代码的断言实参, 出现 `|| true` / `|| 1` /
+  `|| !!1` / `|| Boolean(1)` 一类恒真兜底即红; 带两条自证(能识别违规 / 正常断言不误报)。
+- **为什么需要专门的闸门**: 现有 `check_assert_count` 只数条数、`check_assert_signature`
+  只看签名 —— 两者都拦不住「条数没少但内容已被架空」。
+- **顺手修掉**: `test/run_all.js:40` 的 `SKIP(env)` 提示只列了 7 个桥接 suite, 实际 9 个
+  (漏 `bridge-jmx-parse` / `bridge-py-run`) —— 与 v1.3.2 修的 `npm test` 聚合漏洞同属一类:
+  清单双源, 改一处忘一处。
+
 ## v1.3.2 — 两个新套件没进 bridge 的 npm test 聚合
 
 - **实证**: `bridge/package.json` 的 `npm test` 聚合里只有 **7** 个套件, 而 bridge 下实际有

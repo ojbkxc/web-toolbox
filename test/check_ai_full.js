@@ -148,6 +148,13 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ' + msg); } el
   ok(s.response.includes('***MASKED***'), '长 token 打码');
   ok(!s.body.includes('SuperSecret123'), '短密码键名打码(v1.0.95: password= 的值无论长短一律 MASKED, 原"短密码可外发"已知边界已消除)');
 
+  // 4a2) 标准 base64 含 `/` 必须整段打码(v1.3.5 实证): 旧字符类 [A-Za-z0-9_=.+-] 漏 `/`,
+  // 会把一段 40+ 的 base64 在 `/` 处切开 —— 前半段(34 字符)<40 所以被**原样漏出**,
+  // 后半段(40 字符)倒还打码。所以必须断言【前半段】不出现, 只查后半段会假绿(踩过)。
+  const b64 = 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldY/YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=';
+  const b64s = A.aiSanitizeEntry({ method: 'POST', url: 'https://x.com/u', headers: {}, body: '{"img":"' + b64 + '"}', response: '' });
+  ok(b64s.body.includes('***MASKED***') && !b64s.body.includes('QUJDREVGR0hJSktMTU5PUFFSU1RVVldY'), 'base64 含 / 整段打码(前半段不漏明文)');
+
   // 4b) query 呈现与卫生(v1.0.20): prompt 条目行含 query(LLM 才能建 url. 链), 长 token 同规则打码
   const qEntry = { method: 'GET', url: 'https://x.com/list?cursor=AAA&access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9eyJhbGciOiJIUzI1NiJ9', headers: {}, body: '', status: 200, response: '' };
   const chainMsgs = A.buildChainPrompt([qEntry]);
@@ -168,7 +175,7 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ' + msg); } el
   const mqUrl = 'https://x.com/a?pad=' + 'p'.repeat(3) + '&' + Array.from({ length: 20 }, (_, i) => 'k' + i + '=' + 'v'.repeat(45)).join('&');
   const mqLine = A.buildChainPrompt([{ method: 'GET', url: mqUrl, headers: {}, body: '', status: 200, response: '' }])[1].content.split('\n').find((l) => l.includes('### [1]'));
   ok(mqLine.length > 300, `前置: 打码后仍超 300 触发截断(实得 ${mqLine.length}, 断言才有交叠面)`);
-  ok(!/[A-Za-z0-9_=.+-]{40,}/.test(mqLine), '打码×截断交叠后条目行无 40+ 残值段(不泄漏)');
+  ok(!/[A-Za-z0-9_=.+\/~-]{40,}/.test(mqLine), '打码×截断交叠后条目行无 40+ 残值段(不泄漏)');
   ok(mqLine.includes('pad=ppp') && mqLine.includes('k0='), '交叠截断保留参数结构(键名可识别)');
   // 4b3) pathLine 直测(v1.0.22 导出): 条目行 helper 的基础形态 + 已打码 url 的幂等
   ok(A.pathLine('https://x.com/a/b?k=1') === '/a/b?k=1', 'pathLine 基础形态: pathname+query');

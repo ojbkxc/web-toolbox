@@ -49,6 +49,20 @@ ok("SECURITY 写默认 127.0.0.1", SEC.includes("127.0.0.1") && SEC.includes("�
 ok("令牌文件以 0600 落盘", /mode:\s*0o600/.test(config), (config.match(/mode:\s*0o\d+/) || [])[0]);
 ok("令牌目录 0700", /mode:\s*0o700/.test(config), (config.match(/mode:\s*0o700/) || [])[0]);
 ok("比较用 timingSafeEqual(定长)", /timingSafeEqual/.test(config), "未见 timingSafeEqual");
+// v1.3.6 修正上面这条的漏洞: 旧实现先比长度、不等直接 return false, 仍是 timingSafeEqual,
+// 所以【上面那条在旧代码上也绿】—— 断言名写着"定长"却从未验证过定长。
+// 定长的真正判据: 先摘要到固定长度再比, 不允许出现「长度不等早退」。
+ok("safeEqual 先摘要再比(无长度早退分支)",
+  /createHash/.test(config) && !/\.length\s*!==\s*\w+\.length\s*\)\s*return false/.test(config),
+  "safeEqual 仍在比较长度后可早退 → 可用计时差探出令牌长度");
+// A2(v1.3.4): 首次生成令牌时不得无条件把明文打到 stderr —— 非 TTY(开机自启重定向到
+// 文件/journald)时明文会落盘, 任何能读该文件的进程即拿到浏览器控制权。
+{
+  const idx = read("bridge/src/index.js");
+  ok("生成令牌时的明文输出受 isTTY 约束",
+    /isTTY/.test(idx) && /请从 \$\{opts\.tokenPath\} 读取令牌/.test(idx),
+    "令牌明文会无条件打到 stderr(非 TTY 下即落盘)");
+}
 ok("hub 用 safeEqual 校验令牌", /safeEqual\(frame\.token/.test(hub), "hub 未走 safeEqual");
 ok("SECURITY 声明 0600", /0600/.test(SEC), "SECURITY 未写 0600");
 
@@ -74,8 +88,10 @@ ok("SECURITY 写明不隐藏 debugger 黄条", /黄条/.test(SEC), "未提黄条
   ok('daemon 启动时对非环回监听给出警告',
     /listenloopback|loopback/.test(src) && /唯一防线|局域网/.test(src), '缺少非环回监听警告');
   // 判据必须按 host 值区分, 不能无条件打印(否则回环用户天天看无意义警告)
+  // v1.3.4: 警告抽为 warnNonLoopback(host) 后两条启动路径共用, 判据放宽为
+  // 对 opts.host / 形参 host 两种写法都成立 —— 仍要求「算 loopback + 取反」, 语义不变。
   ok('警告按 host 判定(环回不打)',
-    /opts\.host === "127\.0\.0\.1"/.test(src) && /!loopback/.test(src), '警告未按 host 条件化');
+    /(?:opts\.)?host === "127\.0\.0\.1"/.test(src) && /!loopback/.test(src), '警告未按 host 条件化');
 }
 
 

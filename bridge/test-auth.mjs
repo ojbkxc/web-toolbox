@@ -165,8 +165,10 @@ try {
     r.ws.close();
     ext.ws.close();
     // daemon 没开 --allow-control: hub.request 会拒 control 方法
+    // 除了文案, 帧里必须带 code —— 丢码会让代理侧降级成「未知错误」(A6, v1.3.4)
     ok(r.f.type === FRAME.RES && r.f.ok === false && /allow-control/.test(String(r.f.error || "")),
       "控制方法未开 --allow-control → forbidden 错误带开启方式", r.f && r.f.error);
+    ok(r.f.code === ERR.FORBIDDEN, "失败回包带 forbidden code(不是裸 message)", r.f && r.f.code);
   }
   // ⑥ 正确配置后一切正常
   {

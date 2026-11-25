@@ -37,7 +37,7 @@ if (BRIDGE_DEPS) {
   if (scanIdx >= 0) suites.splice(scanIdx, 0, ...bridgeSuites);
   else suites.push(...bridgeSuites);
 } else {
-  console.log("  SKIP(env) bridge-unit/exporters/doctor/reconnect/auth/perf/smoke — bridge/node_modules 未安装(cd bridge && npm install)");
+  console.log("  SKIP(env) bridge-unit/exporters/doctor/reconnect/auth/perf/jmx-parse/py-run/smoke — bridge/node_modules 未安装(cd bridge && npm install)");
 }
 
 let failed = [];

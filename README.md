@@ -327,7 +327,7 @@ web-toolbox/
 ├── icons/
 │
 ├── 【测试】
-├── test/                  e2e 走查回归集(一键全量 87 项; 清单与逐项说明见 test/README.md)
+├── test/                  e2e 走查回归集(一键全量 88 项; 清单与逐项说明见 test/README.md)
 ├── test_regression.js     引擎级回归(时间序/裁剪/导出全链)
 ├── mock_bg_test.js        引擎 mock 场景
 │

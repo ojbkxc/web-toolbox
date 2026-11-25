@@ -61,8 +61,10 @@ function aiSanitizeEntry(e, opts = {}) {
 // 长随机串打码: 40+ 连续的 [A-Za-z0-9_=.+-] 视为 token/密钥段, 保留前 8 位 + ***。
 // 不用 \S{40,}: url/长 query 里整段非空白会把前缀(如 token=)一起吞掉,
 // 且两个长值相邻时中间的短连接符(如 : 或 ,)会逃脱打码。
+// 字符类必须含 `/` 与 `~`(v1.3.5 实证): 标准 base64 字母表带 `/`, 漏掉它会把
+// 一段 40+ 的 base64 在 `/` 处切成两段 <40 的碎片 → 前段原样外发。`-` 放末尾作字面量。
 function scrubLong(s) {
-  return String(s).replace(/[A-Za-z0-9_=.+-]{40,}/g, (m) => m.slice(0, 8) + "***MASKED***");
+  return String(s).replace(/[A-Za-z0-9_=.+\/~-]{40,}/g, (m) => m.slice(0, 8) + "***MASKED***");
 }
 
 // prompt 条目行的路径呈现: pathname + query(截断到 300 字符防长 query 挤爆条目行)。

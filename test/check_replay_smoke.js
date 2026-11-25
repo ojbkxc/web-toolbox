@@ -27,7 +27,7 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ' + msg); } el
   const r1 = await replayFnInSb('http://hang.test/x', 'GET', {}, '', 200);
   const dt = Date.now() - t0;
   ok(r1.status === 0 && r1.ok === false, '挂起接口超时返回 status:0');
-  ok(/timeout/.test(r1.text) && /200s|0s|挂起/.test(r1.text) === false || true, '超时 text 含说明: ' + r1.text);
+  ok(/^timeout:/.test(r1.text) && /无响应/.test(r1.text), '超时 text 含说明: ' + r1.text);
   ok(dt >= 180 && dt < 1500, `看门狗时机合理(${dt}ms)`);
   // 1b) 正常返回不受看门狗影响
   const sb2 = { fetch: async () => ({ status: 200, ok: true, text: async () => '{"a":1}' }), AbortController, setTimeout, clearTimeout };

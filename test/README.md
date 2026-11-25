@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 87 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 88 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -36,6 +36,7 @@ node test/check_xxx.js        # 单跑一个
 | check_list_enhance | 列表增强:状态码颜色/过滤语义/单删联动(就近补选, v1.0.77)/cURL + 重放消费 textarea 编辑值(6a-6f: 编辑 body/头真实注入、坏行过滤、未编辑对照, v1.0.73) + 复选框全量修复(4b 场景: 清洗清死勾/勾选持久化 toolbox.pickIds/详情摘要/退出清键/空可见集全选护栏/重开恢复端到端, v1.0.77) + 清洗去重完全相同请求(4n: method+path+query+body 全同去重保首条/headers-响应-耗时不同不拆/状态明示含重复/pickIds 死 id 同清/GET-POST 同 path 不算重复, v1.0.82) | v1.0.82 |
 | check_manual_prelude | manualPrelude 持久化与还原 + manual∩auto 优先级(manual=false 镇住 SSO auto 命中/refreshPrelude 重扫不覆盖, v1.0.64) | v1.0.64 |
 | check_nonhttp_guard | 非 http(s) 页录制前置拦截(popup+sidepanel) + sidepanel"未配置域名"空态指引行为级(v1.0.74, #168 方向③) + 重录按钮前置拦截(4: chrome:// 页点「↻ 重录」不发起 stop/clear/start 录制链, v1.0.81) + 重录正向全链(6/6a/6b: http 页按序 stop→clear→start + tabId + 6c: 有数据时 confirm 取消不发起录制链) | v1.0.81 |
+| check_no_tautology | **断言恒真兜底闸门**: 扫全部测试代码(test/ + 根两套 + samples + bridge 的 mjs), 断言(ok/assert)实参里出现 `\|\| true` / `\|\| 1` / `\|\| !!1` / `\|\| Boolean(1)` 一类恒真兜底即红 —— 这类兜底让断言失去判定力, 而 check_assert_count 只数条数、check_assert_signature 只看签名都拦不住。含两条自证(能识别违规/正常断言不误报)。实证来源: v1.3.3 两处 `\|\| true` 压绿 | v1.3.3 |
 | check_options_page | options 旅程:域名增删改授权链/LLM 保存手势 + 删除域名撤销链路端到端(撤销 origins 与申请对称/granted 集同步/清单过滤/呈现层授权态, v1.0.70) + 并发添加串行锁(同 tick 两次 addDomain 都落库、既有域名不被吞) + 条件等待替代固定 sleep(v1.1.5) | v1.1.5 |
 | check_page_eval_press | page.eval 值规约(Map/Set→对象数组、DOM 节点→[Node tag]、函数/循环引用/超深超量标记, 不再静默返回 {}) + page.press 按键表补 code/keyCode(表内键/单字符 KeyA-65/大写自动按 Shift/符号宁缺勿错/表外键与原型同名键都退回只传 key) + 快照标 [disabled](原生与 aria-disabled) + 只读/禁用/hidden 退回直接置空 + 编辑器吞键时兜底置空(clearedVia=direct, 经原型 setter) + page.type 逐字符保真模式(默认 insertText 不变/键按下-抬起顺序/非 ASCII 回落 insertText/回执 typedVia) + 死代码 bridgeSafeValue 已清(v1.1.4) | v1.1.4 |
 | check_page_locate | 页面定位健壮性:命中测试(遮挡上报 covered/coveredBy、shadow 宿主反查、视口外不乱下结论) + 滚动落定轮询(元素移动时取落定坐标而非中途坐标) + 清空输入框走真实 Backspace(有内容才按键/Range 选中 contenteditable/非文本控件保持旧行为/清干净回执 clearedVia=key) + 悬停同源(vm 跑真实 bridge-client, 注入函数直调 + CDP 调用序列断言, v1.1.3) | v1.1.3 |

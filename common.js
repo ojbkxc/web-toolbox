@@ -564,10 +564,11 @@ function autoDetectChain(entries) {
   for (let i = 0; i < entries.length; i++) {
     const from = entries[i];
     if (!from.response) continue;
-    // M5: 超大 response 跳过 —— 上限与录制截断(background 200KB)对齐(v1.0.96): 录得到的
-    // 就链得上, 此前 100~200KB 的大查询响应录了但静默不链; MAX_LEAVES 兜底防递归爆炸
+    // M5: 超大 response 跳过 —— 上限必须与录制截断(background 200KB=204800 **字节**)对齐。
+    // v1.3.5 修正: 此前这里是 rt.length(UTF-16 码元)与字节错配 —— ASCII 200001~204800B
+    // 录得到却静默不链; CJK 侧反而放宽到 200k 字符(=600KB 字节)。按字节算才是真对齐。
     const rt = from.response;
-    if (rt.length > 200000) continue;
+    if (harByteSize(rt) > 200 * 1024) continue;
     const leaves = [];
     let resp; try { resp = JSON.parse(rt); } catch {
       // H6: 非 JSON 响应用正则提取

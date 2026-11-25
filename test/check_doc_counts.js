@@ -133,8 +133,8 @@ ok("SECURITY.md 覆盖三道闸门", ["域名授权", "令牌", "--allow-control
   ok("docs/troubleshooting.md 存在且 README 有链接", fs.existsSync(tsDoc) && README.includes("docs/troubleshooting.md"), "缺文件或链接");
   if (fs.existsSync(tsDoc)) {
     const t = fs.readFileSync(tsDoc, "utf8");
-    ok("troubleshooting 写的 doctor 项数与 bridge/README 一致(18)",
-      /18 \u9879\u9010\u6761 PASS\/FAIL|18 \u9879/.test(t) || true, "troubleshooting 文中 doctor 项数");
+    ok("troubleshooting 写的 doctor 项数带「有 daemon 时」前提",
+      /有 daemon 时 18 项/.test(t), "缺「有 daemon 时 18 项」");
   }
 }
 

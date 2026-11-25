@@ -29,7 +29,12 @@ export class Hub extends EventEmitter {
 
   async start() {
     await new Promise((resolve, reject) => {
-      this.wss = new WebSocketServer({ host: this.host, port: this.port, path: WS_PATH });
+      this.wss = new WebSocketServer({
+        host: this.host, port: this.port, path: WS_PATH,
+        // 帧上限: ws 默认 100MB, 且 JSON.parse 发生在鉴权**之前** —— 未鉴权的对端可用大帧
+        // 把持有浏览器连接的 daemon 打 OOM。抓包帧远小于此, 8MB 足够宽裕。
+        maxPayload: 8 * 1024 * 1024,
+      });
       this.wss.once("listening", resolve);
       this.wss.once("error", reject);
       this.wss.on("connection", (ws, req) => this._onConnection(ws, req));
@@ -164,6 +169,9 @@ export class Hub extends EventEmitter {
             (e) => this._send(ws, {
               type: FRAME.RES, id: frame.id, ok: false,
               error: (e && e.message) ? e.message : String(e),
+              // 码必须随帧回去: 代理侧 errors.fromException 只认 e.code, 丢码会把
+              // forbidden/timeout/ext_error 全降级成「未知错误」+ 误导性 hint(v1.3.4 实测)。
+              code: (e && e.code) || ERR.EEXT,
             }),
           );
         return;

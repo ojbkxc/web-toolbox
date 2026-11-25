@@ -70,7 +70,22 @@ if (opts.help) {
 const { token, source } = resolveToken(opts);
 if (source === "generated") {
   log(`已生成新令牌, 保存到 ${opts.tokenPath}`);
-  log(`请把这串令牌填进扩展配置页: ${token}`);
+  // 只在交互终端打印全文: 输出被重定向到文件/journald 时(开机自启常见)明文令牌会落盘,
+  // 任何能读该文件的进程即获得全部浏览器控制权。
+  if (process.stderr.isTTY) log(`请把这串令牌填进扩展配置页: ${token}`);
+  else log(`请从 ${opts.tokenPath} 读取令牌并填进扩展配置页(非交互终端不打印明文)`);
+}
+
+// 非环回监听是高风险选择(SECURITY.md: "等于把浏览器控制面挂到网络上") ——
+// 两条启动路径(daemon / 单进程回落)都必须明说。此前只有 daemon 路径告警,
+// 单进程回落(--host 0.0.0.0 但 daemon 起不来)时连一个字都提。
+function warnNonLoopback(host) {
+  const loopback = host === "127.0.0.1" || host === "::1" || host === "localhost";
+  if (!loopback) {
+    log(`⚠ 监听地址 ${host} 不是回环 —— 局域网/公网上的其他机器都能连这个端口;`
+      + ` 传输是明文 ws://(令牌在握手帧里裸传, 可被抓包); 令牌是唯一防线`
+      + `(令牌文件权限 0600, 别外发)。只想本机用请去掉 --host 或写 --host 127.0.0.1`);
+  }
 }
 
 // 归档实例工厂: daemon 模式与单进程模式各建自己的(两者都可能是"真正在写归档"的那一侧)。
@@ -117,14 +132,7 @@ async function runDaemon() {
   log(`扩展应连接: ws://${opts.host}:${opts.port}${protocol.WS_PATH}`);
   // 非环回监听是一个高风险选择(SECURITY.md: "等于把浏览器控制面挂到网络上"), 但此前启动
   // 输出里一个字都没提 —— 用户只在读了 SECURITY.md 之后才知道, 而多数人不读。
-  // 这里在启动时明说: 暴露了什么、令牌是唯一防线、怎么退回。
-  {
-    const loopback = opts.host === "127.0.0.1" || opts.host === "::1" || opts.host === "localhost";
-    if (!loopback) {
-      log(`⚠ 监听地址 ${opts.host} 不是回环 —— 局域网/公网上的其他机器都能连这个端口;`
-        + ` 令牌是唯一防线(令牌文件权限 0600, 别外发)。只想本机用请去掉 --host 或写 --host 127.0.0.1`);
-    }
-  }
+  warnNonLoopback(opts.host);
   log(`令牌来源: ${source}`);
   log(`控制类工具: ${opts.allowControl ? "启用" : "关闭(加 --allow-control)"}`);
   log("等待扩展连接... (Ctrl+C 退出)");
@@ -255,14 +263,19 @@ async function createProxyHub(WS) {
           state.pending.delete(f.id);
           clearTimeout(p.timer);
           if (f.ok) p.resolve(f.result);
-          else p.reject(new Error(f.error || "daemon 返回错误"));
+          // 码必须透传: 代理层 errors.fromException 只认 e.code, 丢码会把
+          // forbidden/timeout/ext_error 全降级成「未知错误」(v1.3.4 实测)。
+          else p.reject(Object.assign(new Error(f.error || "daemon 返回错误"), { code: f.code || "error" }));
         }
       });
       ws.on("error", () => { clearTimeout(timer); settle(false); });
       ws.on("close", () => {
         state.connected = false;
         state.extOnline = false;
-        for (const [, p] of state.pending) { clearTimeout(p.timer); p.reject(new Error("daemon 连接断开")); }
+        for (const [, p] of state.pending) {
+          clearTimeout(p.timer);
+          p.reject(Object.assign(new Error("daemon 连接断开"), { code: protocol.ERR.NOT_CONNECTED }));
+        }
         state.pending.clear();
         if (!reconnectTimer) {
           reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, 1000);
@@ -342,6 +355,7 @@ if (hasDaemon) {
     });
     try {
       await hub.start();
+      warnNonLoopback(opts.host);
       hub.on("connected", (info) => log(`扩展已连接: ${JSON.stringify(info)}`));
       hub.on("disconnected", () => log("扩展已断开"));
     } catch (e) {

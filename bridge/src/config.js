@@ -110,10 +110,10 @@ export function resolveToken(opts) {
   return { token, source: "generated" };
 }
 
-// 定长比较, 避免逐字符提前返回带来的时间差(本地场景风险低, 但成本为零)
+// 定长比较: 先各自摘要到固定长度再比, 连「长度不同」这条早退分支都去掉 ——
+// 否则本机进程可用计时差探出令牌长度(默认 48 hex), 属低危信息泄露。
 export function safeEqual(a, b) {
-  const ba = Buffer.from(String(a == null ? "" : a));
-  const bb = Buffer.from(String(b == null ? "" : b));
-  if (ba.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ba, bb);
+  const ha = crypto.createHash("sha256").update(String(a == null ? "" : a)).digest();
+  const hb = crypto.createHash("sha256").update(String(b == null ? "" : b)).digest();
+  return crypto.timingSafeEqual(ha, hb);
 }

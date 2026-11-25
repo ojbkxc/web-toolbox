@@ -1,10 +1,41 @@
 # 评审记录 —— 对标 chrome-devtools-mcp
 
+## R125 · v1.3.6 (2026-11-24)
+
+### 回头审自己的加固: 一条假闸门 + 一条缺闸门
+
+- **假闸门**: `ok("比较用 timingSafeEqual(定长)", /timingSafeEqual/.test(config))` ——
+  旧实现的长度早退分支里**仍然调用** timingSafeEqual, 所以这条断言在**加固前的代码上也绿**。
+  断言名声称「定长」, 但从未验证定长; A1 长度侧信道一直在, 闸门全程无感。
+- **缺闸门**: A2(令牌明文只在 TTY 打印)改完没有任何断言守着, 谁改回去都不会红。
+
+### 改法
+
+- A1 真判据: `/createHash/` 存在 **且** 长度不等早退**不存在**(正则否定匹配)。
+- A2 判据: `/isTTY/` 存在 **且** 非 TTY 分支文案指向令牌文件。两个条件分开自证。
+
+### 证据
+
+| 项 | 命令 | 结果 |
+|---|---|---|
+| A1 闸门(修后) | `node test/check_security_claims.js` | PASS |
+| A1 自证(回退长度早退) | 同上 | **FAIL** → 还原后绿 |
+| A2 自证(去 isTTY 守卫) | 同上 | **FAIL** → 还原后绿 |
+| A2 自证(改提示文案) | 同上 | **FAIL** → 还原后绿 |
+| 全量回归 | `node test/run_all.js` | 88/88 PASS |
+
+### 教训
+
+「修了但没闸门」和「闸门看着有洞」是同一件事的两面 —— 前者靠流程检查, 后者**只能靠回退自证发现**。
+本轮 A1 的假闸门就是靠「把修复回退掉, 看闸门红不红」抓到的: 回退后它仍然绿。
+结论: **任何断言写完后必须做一次回退自证**, 尤其在加固/合规这类「闸门名听着就让人放心」的面上。
+
+
 参照: `E:\github\chrome-devtools-mcp-main\chrome-devtools-mcp-main`(Chrome DevTools MCP, TS + puppeteer)。
 目标: 持续评审并完善本仓库; 每轮必须"取证 → 修根因 → 回归 → 记录", 不许只写结论。
 
 **门禁(2026-11-23 起)**
-- 扩展回归: `node test/run_all.js` → **87/87 PASS**(内含桥接 unit/exporters/doctor/smoke)
+- 扩展回归: `node test/run_all.js` → **88/88 PASS**(内含桥接 unit/exporters/doctor/smoke)
 - 桥接端到端: `node bridge/smoke.mjs` → **74 PASS / 0 FAIL**(任意 cwd)
 - 桥接单测: `node bridge/unit.mjs` → **71 PASS / 0 FAIL**; `node bridge/test-exporters.mjs` → **46 PASS / 0 FAIL**
 - 桥接自检: `node bridge/src/doctor.js` → **18/18 PASS**(需先起 daemon; 含监听地址/活体握手/协议与包版本一致性/归档目录/令牌权限)
@@ -49,6 +80,113 @@
 - R18 · v1.1.22 (2026-11-23)  —  正文超限只在尾部拼一句说明 → 结构化返回带截断元信息
 - R19 · v1.1.23 (2026-11-23)  —  test/README 自称覆盖清单却漏了半数走查文件 → 表格与文件双向校验
 - R20 · v1.1.24 (2026-11-23)  —  提升 200KB 截断口径(字符→字节)与响应头落库, 属 AGENTS §5 ask-first
+
+## R124 · v1.3.5 (2026-11-24)
+
+### 两条闸门没盖住的真实缺口 + 基线校对
+
+- **R6(数据卫生)**: `scrubLong` 字符类缺 `/` —— 标准 base64 在 `/` 处分段后两段均 <40,
+  前半段明文进 prompt。`check_ai_full` 只用无 `/` 的长串测, 测不到。改法: 补 `/`、`~`,
+  并新增带 `/` 的真实 base64 断言(**断言前半段不泄漏** —— 只查后半段会假绿, 这个坑自己踩了一次)。
+- **R7(关联闸门)**: `common.js` 用 `rt.length`(UTF-16 码元) 比 200000, 而录制截断是
+  204800 **字节** —— ASCII 带内录得到却静默不链, CJK 侧反而放宽到 600KB。改为
+  `harByteSize(rt) > 200*1024`。实测 203992B: 旧 0 链 / 新 1 链。
+- **基线校对(收紧)**: 12 个 suite 实际断言数高于基线 —— 这些文件删掉同等数量断言不会被拦。
+  已按实际值重新基线(与本次主题一致: 貌似存在的闸门其实有洞)。
+
+### 证据
+
+| 层 | 命令 | 结果 |
+|---|---|---|
+| R6 闸门(修后) | `node test/check_ai_full.js` | PASS |
+| R6 闸门自证(回退字符类) | 同上 | **FAIL** base64 前半段漏明文 → 还原后绿 |
+| R7 闸门(修后) | `node test/check_auto_chain.js` | PASS(带内 204792B → 1 链) |
+| R7 闸门自证(回退旧判断) | 同上 | **FAIL** 带内不可建链(实得 0) → 还原后绿 |
+| 基线校对 | `node test/check_assert_count.js` | PASS(1911 条 / 80 suite, 无漂移提示) |
+| 全量回归 | `node test/run_all.js` | 88/88 PASS |
+
+### 待批(AGENTS §5 ask-first, 未实施)
+
+引擎审计 R1(P0)/R2/R4/R5(P1)/R3(P2) 均落在 `background.js` 录制核心, 已列入 CHANGELOG
+待批表。其中 **R2 最需优先**: 亚毫秒 `startTs` 已存在却未参与排序 → 同毫秒并发必倒挂,
+每次录制都在发生, 且 `check_engine_edge` 必须 `sleep(4)` 才能断言(结构上测不到 tie)。
+
+---
+
+## R123 · v1.3.4 (2026-11-24)
+
+### 桥接层授权防御性安全评估: 错误码丢失 + 四项加固
+
+- **最高价值发现(A6)**: 默认部署(daemon+proxy)下**所有错误码丢失**。子代理用真实 Hub 复现:
+  失败 RES 帧 `"code" in frame === false` → `fromException` 拿不到 code → 全降级成
+  `错误[error]: 未知错误` + FALLBACK 的误导性 hint。AI 客户端靠码分流重试全部失效。
+- **根因(两处叠加)**: `hub.js` 失败 RES 帧不带 `code`; `index.js` 代理侧裸抛 `Error`。
+- **为何既有测试漏了**: `unit.mjs` 测的是 `hub.request()` 直抛的 `e.code`(没走代理转发),
+  `smoke.mjs` 靠 `tools.js` 本地 `daemonAllowControl` 兜住。两处都盖不到「代理传错」路径。
+- **同批加固**: A4 帧上限(ws 默认 100MB 且鉴权前 JSON.parse → 未鉴权大帧 OOM 面)、
+  A1 长度侧信道(改为 sha256 定长比较)、A2 令牌明文落盘(仅 TTY 时打印)、
+  A3 告警覆盖面(单进程回落路径也告警)、A5 断开错误码。
+- **已核实无缺陷**: 路径穿越(文件名过正则白名单 + 来源 readdirSync, 工具面无用户输入→路径)、
+  shell 注入(全仓无 `shell:true`/`execSync`, spawn 均数组传参)。
+
+### 证据
+
+| 层 | 命令 | 结果 |
+|---|---|---|
+| 缺陷复现 | 真实 Hub + 代理发 page.click | RES 帧 `"code" in frame === false` |
+| 新断言(修后) | `cd bridge && node unit.mjs` | 86 PASS / 0 FAIL(含 2 条新断言) |
+| 闸门自证(code) | 临时去掉 `code:` 行 | **FAIL** 代理失败回包带 code → 还原后绿 |
+| 闸门自证(maxPayload) | 临时改成 100MB | **FAIL** 帧上限 → 还原后绿 |
+| 桥接鉴权 | `node test-auth.mjs` | 10 PASS / 0 FAIL(新增 code 断言) |
+| 全量回归 | `node test/run_all.js` | 88/88 PASS |
+
+### 下一轮候选(更新)
+
+1. **等批**: 200KB(字符)→ 字节口径修正(录制引擎配额裁剪, AGENTS §5 ask-first)。
+2. **A3 策略选择**: 非回环且无 TLS 时是否启动即拒(需 `--i-know`)——属用法变动, 等用户定。
+3. **重连退避**: 代理侧固定 1s 重连、无退避上限(daemon 长期不可用时每秒刷连接)。
+4. **基线漂移**: `check_assert_count` 提示 8 个 suite 断言数高于基线, 删断言不会被拦。
+5. **跨环境矩阵**: 无 python / 无 bridge 依赖两分支的实跑验证。
+
+---
+
+## R122 · v1.3.3 (2026-11-24)
+
+### 两条断言带恒真兜底, 闸门形同虚设
+
+- **怎么发现的**: 全仓扫 `test/` 的恒真兜底, 命中 2 处且都在 `ok(...)` 的实参里。
+  用 `node -e` 直接求值: 不匹配的输入也返回 `true` —— 断言**永不失败**。
+- **根因**: `replay.js:78` 超时文案是 `timeout: 单条请求 0s 无响应(接口挂起?)`
+  (测试传 `timeoutMs=200` → `Math.round(200/1000)=0`); 原断言写
+  `/200s|0s|挂起/.test(text) === false`, 文案恰好含 `0s` → 断言必假。当时没修断言、
+  而是加 `|| true` 压绿 —— AGENTS §1.2 明令禁止。
+- **改法**: 两条改成真正表达意图的断言 + 新增元闸门 `test/check_no_tautology.js`
+  (扫断言实参的恒真兜底, 带 2 条自证)。现有 `check_assert_count` 只数条数、
+  `check_assert_signature` 只看签名, 都拦不住「条数没少但内容被架空」。
+- **顺手**: `run_all.js:40` 的 `SKIP(env)` 提示补齐 9 个桥接 suite(漏了 jmx-parse/py-run)。
+
+### 证据
+
+| 层 | 命令 | 结果 |
+|---|---|---|
+| 恒真实证 | `node -e` 直求值 | 两条表达式均返回 `true`(输入不匹配也 true) |
+| 新闸门(修后) | `node test/check_no_tautology.js` | PASS(扫 93 文件, 0 命中) |
+| 闸门自证(临时还原 `\|\| true`) | 同上 | **FAIL**(定位到 check_doc_counts.js:137) → 还原后 PASS |
+| 断言守恒 | `node test/check_assert_count.js` | PASS(1904 条 / 80 suite) |
+| 文档计数 | `node test/check_doc_counts.js` | PASS(88 suites) |
+| 全量回归 | `node test/run_all.js` | 88/88 PASS |
+
+### 下一轮候选(更新)
+
+1. **等批**: 200KB(字符)→ 字节口径修正(录制引擎配额裁剪, AGENTS §5 ask-first)。
+2. **只读注解收益验证**: 找 Claude Code 侧配置样例验证 `readOnlyHint` 放行。
+3. **基线漂移**: `check_assert_count` 提示 8 个 suite 断言数已高于基线(bridge_errors 22→24,
+   doc_counts 27→36, engine_edge 52→57, export_fields 21→33, options_page 36→38,
+   repo_rules 17→19, security_claims 24→28, tool_reference 10→12) —— 基线未跟上,
+   意味着这些文件删掉同等数量断言不会被拦。需一次基线校对。
+4. **跨环境矩阵**: 无 python / 无 bridge 依赖两分支的实跑验证。
+
+---
 
 ## R35-R48 · v1.1.38 (2026-11-23)
 

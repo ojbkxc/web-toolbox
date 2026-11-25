@@ -304,6 +304,23 @@ function extHello(extra = {}) {
   });
   ok("代理 QUERY 被转到扩展并按原 id 回包", got.ok === true && got.result[0].id === "a1", got);
 
+  // 失败回包必须带 code(A6, v1.3.4): 代理侧 errors.fromException 只认 e.code,
+  // 丢码会把 forbidden/timeout/unknown_method 全降级成「未知错误」+ 误导性 hint。
+  const failFrame = await new Promise((resolve, reject) => {
+    proxy.ws.on("message", (raw2) => {
+      const f = JSON.parse(raw2.toString());
+      if (f.type === FRAME.RES && f.id === "q2") resolve(f);
+    });
+    proxy.ws.send(JSON.stringify({ type: FRAME.QUERY, id: "q2", method: "no.such.method", params: {} }));
+    setTimeout(() => reject(new Error("proxy fail-frame timeout")), 4000);
+  });
+  ok("代理失败回包带 code(不是裸 message)", failFrame.ok === false && failFrame.code === ERR.UNKNOWN_METHOD, failFrame);
+
+  // 帧上限(A4, v1.3.4): ws 默认 100MB 且 JSON.parse 在鉴权前 —— 未鉴权对端可用大帧打 OOM。
+  ok("Hub ws 帧上限已设(8MB, 不是 ws 默认 100MB)",
+    !!(hub.wss && hub.wss.options && hub.wss.options.maxPayload === 8 * 1024 * 1024),
+    hub.wss && hub.wss.options && hub.wss.options.maxPayload);
+
   // 未鉴权的连接不许发 query
   const rogue = await new Promise((resolve) => {
     const ws = new WebSocket(url);
