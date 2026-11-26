@@ -1,5 +1,43 @@
 # 更新记录
 
+## v1.3.7 — 面板还亮着 REC, 其实后面的条目一条都进不去
+
+录制引擎的批写入链里, `await chrome.storage.local.get([KEY_HARVEST])` 没有 try/catch。
+同一函数里 `set` 和 `trimToFit` 都有兜底(注释还专门写了「不 catch 的话 rejection 沿
+harvestQueue 链传播无人接 → 链断」), 唯独这条 get 漏了。
+
+### 一次读失败 = 之后全丢
+
+`get` 一次 reject 就让 `harvestQueue` 变成 rejected promise; 后续每批的 `.then` 只带成功回调,
+拒绝**直接穿透**、回调永不执行 → **链永久死亡**。不是丢一批, 是丢剩下的全部。
+
+四项同时骗人:
+
+- 诊断零记录 —— 导出诊断日志也看不到任何读取异常;
+- `recState` 仍是 `recording`, 徽章照显 REC;
+- `getRecInfo().count` 停在失败前的数字, 用户以为「这段没抓到请求」;
+- 唯一症状是浏览器 console 的 unhandledRejection, 普通用户不会看。
+
+触发不需要恶意: MV3 service worker 被回收/重载后, `chrome.storage` 调用会瞬时报
+`Extension context invalidated`。
+
+### 修法(`flushEntries` 三处)
+
+- **读一次 + 重试一次** —— 瞬失通常下一次调用即恢复, 直接放弃等于白丢一批;
+- **两次都失败** → `diag("error", ...)` 记明丢弃条数并丢本批, **不清空历史**。
+  原计划「`arr` 降级为空」会让随后的 `set` 覆盖全库 —— 一次读失败换来全库丢失, 比原缺陷更糟;
+- **链尾 `harvestQueue.catch(...)`** —— 回调内任何未预料的抛出都不会再把链粘死。
+
+### 闸门 `test/check_engine_resilience.js`(14 断言)
+
+瞬失自愈不丢条目且无未处理 rejection / 连续失败时历史不被覆盖且有 error 级诊断 /
+故障后新批次照常入库 / `getRecInfo().count` 与库内真实条数一致 / 解析阶段抛出也能自愈续跑。
+
+两处修复各做一次回退自证: 去掉读兜底 → **FAIL 5**, 只去掉链尾 catch → **FAIL 2**, 还原后 14 项全绿。
+
+回归: 89 项全绿。
+
+
 ## v1.3.6 — 「定长比较」这条断言从没验证过定长, 令牌明文仍会落盘
 
 审计收尾时回头看自己的加固, 发现**两条新修的项没有闸门守着** —— 按仓库规则「改了没闸门等于白改」,

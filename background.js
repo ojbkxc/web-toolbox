@@ -482,6 +482,20 @@ let harvestQueue = Promise.resolve();
 // 前比对 —— 不等则本批是清空前的旧条目, 跳过 set 防复活(详见 clearHarvest 注释)。
 let harvestClearSeq = 0;
 
+// 读库 + 重试一次。MV3 service worker 被回收/重载后 chrome.storage 会瞬时报
+// "Extension context invalidated", 下一次调用通常即恢复 —— 直接放弃等于白丢一批。
+// 两次都失败返回 { ok:false } 由调用方丢本批: **不清空历史**(降级成空数组再 set 会把
+// 全库覆盖, 一次读失败换来全库丢失, 比原缺陷更糟)。
+async function readHarvestWithRetry() {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return { ok: true, value: await chrome.storage.local.get([KEY_HARVEST]) };
+    } catch (e) {
+      if (attempt === 1) return { ok: false, error: e };
+    }
+  }
+}
+
 function flushEntries(items) {
   // 入列时序快照(每个 item 在 loadingFinished 同步点记的 __clearSeq): clearHarvest 递增后,
   // 旧 seq 的批 set 前自废(否则清空后 flush 写回复活, 列表清不掉)。pushEntry 在
@@ -494,7 +508,15 @@ function flushEntries(items) {
     // 的旧条目。必须在 get/push 之前 return —— arr = decoded 是 mem 内部数组引用, push
     // 会直接污染 mem(即使后面 set 被 skip, mem 已被改, 列表复活)。回调开头检查最稳。
     if (harvestClearSeq !== myClearSeq) return;
-    const r = await chrome.storage.local.get([KEY_HARVEST]);
+    // 读失败曾能让整条链永久死亡(v1.3.7 修): 本 await 一次 reject → harvestQueue 变 rejected,
+    // 后续每批的 .then(只带成功回调)拒绝直接穿透、回调永不执行 → 之后所有录制条目静默丢失,
+    // 而 diag 零记录、recState 仍是 recording(用户看着"录制中"其实一条都进不去)。
+    const read = await readHarvestWithRetry();
+    if (!read.ok) {
+      diag("error", "harvest", `storage 读取失败(重试后仍失败), 本批 ${items.length} 条丢弃: ` + String(read.error).slice(0, 200));
+      return;
+    }
+    const r = read.value;
     const decoded = decodeHarvest(r[KEY_HARVEST]);
     // 损坏数据: 不静默覆盖 —— 把旧值备份到独立 key 再重建, 用户可救回
     let arr;
@@ -530,6 +552,11 @@ function flushEntries(items) {
     } catch (e) {
       diag("error", "harvest", "storage 写入失败: " + String(e).slice(0, 200));
     }
+  });
+  // 链尾自愈(v1.3.7): 回调内已对读/裁/写各自兜底, 但任何未预料的抛出仍会让 harvestQueue
+  // 变成 rejected, 之后所有批次静默哑掉。挂一层 catch 把链拉回 resolved —— 保证链永不粘死。
+  harvestQueue = harvestQueue.catch((e) => {
+    diag("error", "harvest", "flush 链异常已自愈: " + String(e).slice(0, 200));
   });
   return harvestQueue;
 }

@@ -30,6 +30,7 @@
   "test/check_duration_unit.js": 6,
   "test/check_early_buffer.js": 21,
   "test/check_engine_edge.js": 57,
+  "test/check_engine_resilience.js": 14,
   "test/check_entry_health.js": 4,
   "test/check_export_clean.js": 33,
   "test/check_export_fields.js": 33,

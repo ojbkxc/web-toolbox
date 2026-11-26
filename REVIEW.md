@@ -1,5 +1,149 @@
 # 评审记录 —— 对标 chrome-devtools-mcp
 
+## R126 · v1.3.7 (2026-11-26)
+
+### R1(P0) 取证: 一次 storage 读失败, 之后所有录制条目**永久**不入库
+
+缺陷位置: `background.js:493` `flushEntries` 里的批写入链。
+
+```js
+harvestQueue = harvestQueue.then(async () => {
+  if (harvestClearSeq !== myClearSeq) return;
+  const r = await chrome.storage.local.get([KEY_HARVEST]);   // ← 无 try/catch
+  ...
+});
+```
+
+同一函数里 `trimToFit` 有 catch、`set` 有 catch（注释还专门写了「不 catch 的话
+rejection 沿 harvestQueue 链传播无人接 → 链断」）—— 唯独这条 **get 漏了**。
+
+失效机制: `get` 一次 reject → `harvestQueue` 变成 rejected promise → 下一批的
+`.then(onFulfilled)` 只带成功回调，拒绝**直接穿透**，回调永不执行，且 `harvestQueue`
+继续是 rejected → 之后**每一批**都这样 → 链永久死亡。不是丢一批，是丢剩下的全部。
+
+### 复现(真 background.js + chrome mock, 与 test/check_engine_edge.js 同一套)
+
+只给「flushEntries 那次 promise 形式的 harvest 读」注入一次 reject（其余路径保持健康，
+避免把别的缺陷混进取证）：
+
+| 阶段 | 动作 | 库内容 |
+|---|---|---|
+| 1 | 正常录入 a1 | `/a1` |
+| 2 | 令下一次 harvest 读 reject，录入 b1 | `/a1`（b1 丢）|
+| 3 | 读已恢复正常，录入 c1、d1 | `/a1`（**c1、d1 仍全丢**）|
+
+真实输出:
+
+```
+阶段1 正常批入库: ["/a1"]
+阶段2 设定 failNextGet=1, 造 b1 ...
+[unhandledRejection] Error: QUOTA_BYTES quota exceeded (模拟瞬时读失败)
+    at Object.get (r1_repro.js:29:33)
+    at background.js:529:42
+阶段2 完成: 库内: ["/a1"] | getRejectCount: 1
+阶段3 get 已恢复, 造 c1/d1 ...
+[unhandledRejection] ... (级联, 每次 .then 穿透都产生一条)
+阶段3 完成: 库内: ["/a1"]
+
+=== 判定 ===
+A. 后续批次是否入库: b1=false c1=false d1=false
+B. 库内条目数: 1 内容: ["/a1"]
+C. 诊断是否记录 get 失败: false | diag 条数: 1
+D. recState: recording | 面板 count: 1
+E. 未处理 rejection: 3
+```
+
+### 为什么这是 P0
+
+四项同时成立，用户完全无感：
+
+1. **诊断零记录** —— get 失败没进 diagEntries（diag 条数 1，且不含任何读取异常），
+   导出诊断日志也看不到；
+2. **状态骗人** —— `recState` 仍是 `recording`，面板徽章照显 REC；
+3. **计数冻住** —— `getRecInfo().count` 停在失败前的 1，用户以为「这段没抓到请求」；
+4. 唯一可见症状是浏览器 console 的 unhandledRejection，普通用户不会去看。
+
+触发条件不需要恶意：扩展上下文被回收（MV3 service worker 休眠/重载）后
+`chrome.storage` 调用会瞬时报 `Extension context invalidated` —— 这正是审计时
+在 console 里实际看到的那条报错。
+
+复跑方式: 该场景已固化进闸门 `test/check_engine_resilience.js`（场景 1），
+`node test/check_engine_resilience.js` 即可重演。
+
+
+### R1 修复
+
+三处改动，都在 `flushEntries`：
+
+```js
+// 1) 读一次 + 重试一次 —— MV3 worker 被回收后 storage 会瞬时报
+//    "Extension context invalidated", 下一次调用通常即恢复, 直接放弃等于白丢一批
+async function readHarvestWithRetry() {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try { return { ok: true, value: await chrome.storage.local.get([KEY_HARVEST]) }; }
+    catch (e) { if (attempt === 1) return { ok: false, error: e }; }
+  }
+}
+
+// 2) 两次都失败 → 记诊断并丢本批
+const read = await readHarvestWithRetry();
+if (!read.ok) {
+  diag("error", "harvest", `storage 读取失败(重试后仍失败), 本批 ${items.length} 条丢弃: ` + String(read.error).slice(0, 200));
+  return;
+}
+
+// 3) 链尾自愈 —— 回调内任何未预料的抛出都不能让链粘死
+harvestQueue = harvestQueue.catch((e) => {
+  diag("error", "harvest", "flush 链异常已自愈: " + String(e).slice(0, 200));
+});
+```
+
+**契约偏差（已记录）**：原定「`arr` 降级为空」被否决 —— 降级成空数组再 `set` 会把**历史条目全部覆盖**，
+一次读失败换来全库丢失，比原缺陷更糟。改为「丢本批 + 历史保留 + 有诊断」，闸门据此断言更强。
+
+### 闸门 `test/check_engine_resilience.js`（14 断言，已进 assert-counts 基线）
+
+| 场景 | 断言要点 |
+|---|---|
+| 1 单次读失败 | 重试成功、该条目没丢、`getRejectCount=1`、**无未处理 rejection** |
+| 2 连续两次读失败 | 本批确实丢弃、**历史未被覆盖**、诊断有 error 级记录 |
+| 3 故障之后 | 新批次照常入库（链没死） |
+| 4 计数一致性 | `getRecInfo().count` 与库内真实条数一致、`recState` 仍 recording |
+| 5 解析阶段抛出 | 本批丢弃、链尾自愈写进诊断、之后新批次仍入库 |
+
+场景 5 的注入点：读出成功但在属性访问时抛（`Proxy` 的 `then` 返回 `undefined` 以保证 `await` 不提前触发），
+专门用来给链尾 catch 提供**独立**行为证据 —— 否则重试已兜住，去掉链尾 catch 闸门照样绿，那就是摆设。
+
+### 回退自证（两处修复各自独立验证）
+
+```
+=== 基线(修复态) ===            exit=0 | 引擎韧性 PASS (14 项)
+=== 回退 A: 去掉读兜底 ===      exit=1 | 引擎韧性 FAIL: 5
+  ✗ 1a 单次读失败后重试成功, 该条目没丢(实得 ["/a1"])
+  ✗ 2b 历史条目未被覆盖
+  ✗ 2c 读失败进了诊断日志(旧实现 diag 零记录)
+  ✗ 2d 诊断级别是 error(实得 undefined)
+  ✗ 3a 读恢复后新批次照常入库(链未粘死, 实得 ["/a1"])
+=== 回退 B: 只去掉链尾 catch === exit=1 | 引擎韧性 FAIL: 2
+  ✗ 5b 链尾自愈写进了诊断(而不是静默哑掉)
+  ✗ 5c 解析抛出之后新批次仍入库(实得 ["/a1","/b1","/d1"])
+=== 还原后复跑 ===              exit=0 | 引擎韧性 PASS (14 项)
+还原校验: 文件与备份字节一致 = true
+```
+
+受影响套件复跑：`check_assert_count` / `check_engine_edge` / `check_engine_resilience` /
+`check_auto_chain` / `check_diag_bounds` / `check_bg_detach_guard` 全部 PASS。
+
+### 门禁
+
+| 项 | 命令 | 结果 |
+|---|---|---|
+| R1 闸门(修后) | `node test/check_engine_resilience.js` | PASS(14 项) |
+| R1 自证(去掉读兜底) | 同上 | **FAIL: 5** → 还原后绿 |
+| R1 自证(只去链尾 catch) | 同上 | **FAIL: 2** → 还原后绿 |
+| 受影响套件 | `check_engine_edge` / `check_auto_chain` / `check_diag_bounds` / `check_bg_detach_guard` / `check_assert_count` | 全部 PASS |
+| 全量回归 | `node test/run_all.js` | 89/89 PASS |
+
 ## R125 · v1.3.6 (2026-11-24)
 
 ### 回头审自己的加固: 一条假闸门 + 一条缺闸门
