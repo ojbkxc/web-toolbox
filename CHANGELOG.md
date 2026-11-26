@@ -1,5 +1,59 @@
 # 更新记录
 
+## v1.3.8 — 时间线倒挂、溢出无声、假录制、冷启动丢帧、诊断超配额
+
+四条来自录制引擎审计, 全部属于「闸门看着有、实际测不到」的类型: 既有 88 项断言里,
+R2 被 `check_engine_edge` 的 `sleep(4)` 绕开(时间戳一错开, 排序缺陷就不显形),
+R3 被「只用 ASCII 测字节界」绕开(`.length` 与 UTF-8 字节数在 ASCII 上恰好相等)。
+
+### R2(P1) 同一毫秒并发: 时间线倒挂
+
+排序键只有毫秒 `ts`, 同毫秒并发的两条请求比较恒等 → 稳定排序原样保留
+「响应完成序」, 慢接口先完成就排到前面。`startTs`(CDP 亚毫秒单调时钟)早就在条目里,
+却没参与比较。改为 `ts` 主键 + `startTs` tiebreak。
+
+**与任务书的偏差(实测修正)** —— 原写「`(startTs || ts)` 主键」。实测 `startTs` 对
+WebSocket 帧与旧版条目恒为 0(`startTs: params.timestamp || 0`); 拿它当主键会把这一整类
+条目顶到时间线最前。`ts`(到达挂钟)是唯一跨毫秒可信的序, 所以只让它做同毫秒的 tiebreak。
+
+### R4(P1) 三条独立子缺陷
+
+- **溢出无声**: 超 3000 条时 `while (arr.length > MAX_ENTRIES) arr.shift();` 直接丢最旧,
+  零诊断 —— 而 `trimToFit` 因配额丢条目时是记 diag 的, 两处口径互相矛盾。现记
+  `warn` 级诊断并带丢弃条数。
+- **占位串不可判**: base64 响应体被换成 `(binary/base64 略)`, 与真实文本长得一样,
+  导出/HAR/链路重放分不清「原本是二进制」还是「真收到这串字」。现加 `responseBase64: true`
+  (只在真二进制时写, 文本条目不带该键)。
+- **stop 丢在途**: 点停止时 `pending` 里的请求被直接丢掉 —— 面板显示已录制,
+  实际上最后那一两个慢接口永久蒸发。现 `stopRecording` 先 `flushPendingEntries()` 落库
+(标 `incomplete`, `response` 置空)再 `detachAll()`, 并清空 `pending` 防迟到事件复活。
+
+### R5(P1) 假录制 + 冷启动丢帧
+
+- `onDetach`(用户点黄条「取消」/ 被别的调试工具抢走)只清了 attach 记录: `recState` 仍是
+  `recording`、徽章仍显 REC、面板照旧报录制中, 而后续事件一条都进不来。现按「清完后
+  `KEY_TABS` 是否为空」判定, 三出口(`recState` / `KEY_REC` / 徽章)一起回 `idle`。
+- 冷启动窗口(`domainsCache === null`)此前只缓冲 `requestWillBeSent`, 同窗口的
+  `response/finished` 因 `pending` 里查不到条目被直接丢弃 → 补处理后留下一条永不完成的
+  死条目。现所有 `Network.*` 事件按序入缓冲, `stateReady` 用同一个派发函数按原序重放。
+  缓冲加了上限(5000)与一次性溢出诊断: 域名清单始终加载不出来时不许无限增长。
+
+### R3(P2) 诊断计量: 码元 ≠ 字节
+
+512KB 上限用 `JSON.stringify(e).length`(UTF-16 码元)计量, 而本文件截断响应体用的是
+UTF-8 字节 —— 中文 1 字符 3 字节, 实测「计量认为 265000 ≤ 524288, 实际占用 666001 字节」,
+超上限 1.27 倍。新增 `utf8Len()`(与 `utf8Slice` 同一套码点算法), 两处计量改用它。
+
+### 闸门: 新增 check_engine_invariants.js(31 断言)
+
+不靠 `sleep` 错开时间戳, 而是用**冻结时钟**把两条请求的 `ts` 钉在同一毫秒、用
+`waitFor()` 轮询观测落库; 冷启动窗口靠「`require` 后同步派发」构造, 不是碰巧。
+总套件 88 → 90(`check_engine_resilience` + `check_engine_invariants`)。
+
+7 处独立回退自证(删溢出诊断 / 删 base64 标记 / 删 stop-flush / 排序退单键 / 删 tiebreak /
+删 detach 状态复位 / 补处理只重放请求 / 计量退码元)逐条变红, 还原后字节一致且重新全绿。
+
+全量回归 `node test/run_all.js` → 90/90 PASS; `check_assert_count` 1961 条 / 82 suite。
 ## v1.3.7 — 面板还亮着 REC, 其实后面的条目一条都进不去
 
 录制引擎的批写入链里, `await chrome.storage.local.get([KEY_HARVEST])` 没有 try/catch。
@@ -96,17 +150,18 @@ harvestQueue 链传播无人接 → 链断」), 唯独这条 get 漏了。
 **删掉同等数量断言不会被拦**(与本次主题一致: 貌似存在的闸门其实有洞)。已按实际值重新基线,
 现基线 = 实际, 删断言立即红。
 
-### 待批(AGENTS §5 ask-first, 未实施)
+### 待批 → 已全部修完
 
-引擎审计发现 5 条, 全落在 `background.js` 录制核心/缓冲/配额裁剪, 需用户批准:
+上表 5 条曾以「待批」挂在这里(AGENTS §5 ask-first, 因涉及 `background.js` 录制核心)。
+用户批准后按 R1 → v1.3.7(先止血)、R2/R4/R5/R3 → v1.3.8 两批修完, 每条都有闸门与回退自证:
 
-| ID | 问题 | 等级 |
-|---|---|---|
-| R1 | `harvestQueue` 单条 promise 链, `storage.get` 一 reject 则该批**及之后所有**条目永不入库, 且零诊断 | **P0** |
-| R2 | 时间序只按毫秒 `ts` 排序, 亚毫秒 `startTs` 已存在却未参与 —— 同毫秒并发必倒挂, **每次录制都在发生** | **P1** |
-| R3 | 诊断日志 512KB 限用 `JSON.stringify().length`(UTF-16 码元), CJK 下真实 1.44MB(2.75×) | P2 |
-| R4 | 3000 条溢出静默 `shift()` 无诊断; base64 体换占位符无 `responseBase64`; stop 不 flush pending | P1 |
-| R5 | onDetach 不回 `idle` 且徽章继续显示 REC; 冷启动窗口内 response/finished 丢弃致 pending 残留 | P1 |
+| ID | 问题 | 修复版本 | 闸门 |
+|---|---|---|---|
+| R1 | `harvestQueue` 读失败拖死整条链, 后续条目永不入库 | v1.3.7 | `check_engine_resilience`(14 断言) |
+| R2 | 同毫秒并发时间线倒挂 | v1.3.8 | `check_engine_invariants` 场景 1-3 |
+| R4 | 溢出无声 + base64 无标记 + stop 丢在途 | v1.3.8 | 同上 场景 4-6 |
+| R5 | detach 假录制 + 冷启动丢帧 | v1.3.8 | 同上 场景 0/7 |
+| R3 | 诊断计量码元 ≠ 字节 | v1.3.8 | `check_diag_bounds` 场景 ⑦ |
 
 ## v1.3.4 — 默认部署下错误码全丢失, 标错全降级成「未知错误」
 

@@ -5,7 +5,7 @@
 ## 跑法
 
 ```bash
-node test/run_all.js          # 全量 89 项(含仓库根 test_regression / mock_bg_test / samples)
+node test/run_all.js          # 全量 90 项(含仓库根 test_regression / mock_bg_test / samples)
 node test/check_xxx.js        # 单跑一个
 ```
 
@@ -29,6 +29,7 @@ node test/check_xxx.js        # 单跑一个
 | check_early_buffer | SW 冷启动窗口(earlyBuffer)缓冲/补处理/域名过滤同路径 + containsPermission/refreshDomainCache 消息接线 + unmatchedHosts 生命周期/淘汰策略 + 换 tab 竞态窗口 | v1.0.52 |
 | check_export_fields | 四导出器字段消费差异契约(保真 vs 压测语义, 防格式间静默漂移) | v1.0.52 |
 | check_engine_edge | (9) 永远全录行为级: 静态资源 .css/.js、OPTIONS 预检、SSE(event-stream mime) 全部入列(引擎不做 skippable, 清洗只在导出层)、未授权域不入库但计入 unmatchedHosts; 入列乱序修复/关 tab pending 语义/截断/信封/pauseRecording 在途不丢半截/合帧批语义(同 tick 攒一批一次写+批内 FIFO) + pause/stop sendResponse 对称(storage.set 抛错走 {ok:false} 非永挂, v1.0.64) + 120 条大批量合帧无批上限退化(8b, v1.0.71) + clearHarvest 派生键清单含 pickIds(5 键全清+4 旧键回归锚+空信封落库, 10, v1.0.78) + 暂停→继续(同 tab)全链路(7b, #178 修复锚: attach 容错大小写不敏感/同 tab 继续不清 pending/在途横跨暂停窗口照常落库, v1.0.81) + 暂停→换 tab 继续 pending 清空(7c) + 重录全链引擎侧语义(7d: stop→clear→start 同 tab, 旧会话在途作废不混入新会话, v1.0.81) | v1.0.81 |
+| check_engine_invariants | 录制引擎不变式 · 时间序(v1.3.8 R2): ts 只有毫秒精度, 同一毫秒并发的两条请求只用 ts 比较恒等 → 稳定排序保留入列序(响应完成序), 慢接口先完成即时间线倒挂。闸门用可控时钟把两条请求的 ts 钉在同一毫秒(不靠 sleep 错开)+ storage.get 同步回调就地派发, 断言 tie 仍按 CDP 亚毫秒 startTs 排列、缺 startTs 按 0 不产生 NaN 乱序、跨毫秒仍按 ts 序; 回退成单键排序或删掉 tiebreak 均变红 | v1.3.8 |
 | check_engine_resilience | 录制引擎韧性(读失败不再拖死整条链): storage 读瞬失→重试一次自愈, 该条目照常入库且无未处理 rejection; 连续两次失败→本批丢弃但**历史条目不被覆盖**、诊断记 error 级、之后新批次照常入库(链未粘死); 解析阶段任何未预料抛出→链尾 catch 自愈并留诊断, 后续批次照常; 故障后 getRecInfo().count 与库内真实条数一致 | v1.3.7 |
 | check_export_clean | 导出净化产物级验证:HAR 1.2 required 字段齐(含 log.creator 与 content.size/mimeType、cache 对象)/超时 N/A/durationMs 正值分支(v1.0.59)/过滤词作用于导出 + 空 headers 条目不挂空 HeaderManager(对照组断言, v1.0.73) + JMX 挂 CSVDataSet/列 UDF 兜底/data.csv 伴生下载(e2e_popup 3a-3d2: v1.0.82) | v1.0.82 |
 | check_single_source | 单源化探针:SESSION_MARKERS/60s 看门狗双 realm 词法可达 + SLOW_MS/MID_MS 声明+消费计数(无字面量残留) | v1.0.59 |

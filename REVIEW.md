@@ -1,5 +1,448 @@
 # 评审记录 —— 对标 chrome-devtools-mcp
 
+## R127 · v1.3.8 (2026-11-26)
+
+R1 已单独发 v1.3.7 止血。这一轮把录制引擎剩下的 4 条确认缺陷逐条取证: 每条都给出**可复跑的最小复现**
+与真实输出。复现脚本落在仓库外(`D:/GitHub/.tmp/`, 不进版本库), 正式闸门另立 `test/` 文件。
+
+共用 mock: `D:/GitHub/.tmp/harness.js` —— 与 `test/check_engine_resilience.js` 同形, 额外支持
+徽章文本历史 / 域名读延迟(构造冷启动窗口) / base64 响应体 / set 失败注入。每条复现都是独立进程
+(`node <script>.js [part]`), 模块级状态不串味。
+
+### R2(P1) 同一毫秒并发: ts 只有毫秒精度, 时间线倒挂
+
+缺陷位置 `background.js:535`
+
+```js
+arr.sort((a, b) => (a.ts || "").localeCompare(b.ts || ""));
+```
+
+`ts` 是 requestWillBeSent 到达时刻的 ISO 串(**毫秒精度**), `startTs` 是 CDP 单调时钟(**亚毫秒**)。
+两条请求落在同一毫秒时 `localeCompare` 返回 0, 稳定排序保留**入列序** —— 而入列序是响应完成序
+(loadingFinished 里异步取回 body 之后才 `pushEntry`)。慢接口先完成, 就排到快接口前面。
+
+复现(`D:/GitHub/.tmp/r2_repro.js`, 两组对照):
+
+- 对照组 `natural`: 时钟照常走, 两条 ts 差 1ms → 排序正确(说明排序本身没坏, 缺陷只在 tie 情形);
+- 实验组 `tie`: 用可控时钟把两条请求的 ts 钉在同一毫秒, startTs 仍为 10.0 / 10.5, 并让 startTs 更晚的 B 先完成。
+
+真实输出:
+
+```
+[R2/natural] 入库顺序(ts / startTs):
+   0: {"path":"/A","ts":"2026-11-26T01:06:01.630Z","startTs":10}
+   1: {"path":"/B","ts":"2026-11-26T01:06:01.660Z","startTs":10.5}
+[R2/natural] 两条 ts 相同: false | 顺序与请求发出序相反(倒挂): false
+[R2/natural] 判定: ts 不同时排序正确 —— 说明排序逻辑本身有效, 缺陷只在 tie 情形
+
+[R2/tie] 入库顺序(ts / startTs):
+   0: {"path":"/B","ts":"2026-01-01T00:00:00.005Z","startTs":10.5}
+   1: {"path":"/A","ts":"2026-01-01T00:00:00.005Z","startTs":10}
+[R2/tie] 两条 ts 相同: true | 顺序与请求发出序相反(倒挂): true
+[R2/tie] 判定: 同毫秒 tie 时倒挂复现 —— localeCompare 返回 0, 稳定排序保留入列序(响应完成序), 时间线/链路重放顺序与真实请求序相反
+```
+
+**为什么现有闸门抓不到**: `test/check_engine_edge.js:87` 用 `sleep(4)` 把请求错开 —— 恰好绕开了唯一
+会坏的路径。新闸门必须**主动构造同毫秒 tie**, 且不能靠 sleep。
+
+### R2 修复
+
+`background.js:531-543` 排序键改成 **(ts, startTs) 复合比较**:
+
+```js
+arr.sort((a, b) => {
+  const ta = a.ts || "";
+  const tb = b.ts || "";
+  if (ta !== tb) return ta.localeCompare(tb);   // 毫秒不同: 仍按到达时刻(唯一权威的挂钟序)
+  return (a.startTs || 0) - (b.startTs || 0);  // 同一毫秒 tie: 用 CDP 亚毫秒单调时钟定序
+});
+```
+
+**契约偏差(已记录)**: 任务书写的是「排序键改为 `(startTs || ts)` 与 ts 的复合比较」。实现改用
+**ts 主键 + startTs tiebreak**, 理由: `startTs` 对 WebSocket 帧 / 旧版落库条目是 0(引擎里就是
+`startTs: params.timestamp || 0`), 若让 startTs 当主键, 这些条目会被顶到时间线最前面; 而 ts 是
+请求到达的挂钟时刻, 跨毫秒的先后只有它权威。tiebreak 形态既满足契约要验的行为(同毫秒按 startTs
+定序), 又不改写跨毫秒序。
+
+### 闸门 test/check_engine_invariants.js(R2 部分 10 断言; R4 落地后全文件 22 断言, 基线已同步)
+
+| # | 断言 | 只有本修复才能挡住的口径 |
+|---|---|---|
+| 1 | 两条请求都已派发但尚未落库 | 攒批判据(排除"早就写完了"的假通过) |
+| 2 | 两条请求都已落库 | 轮询观测, 不用固定 sleep |
+| 3 | 闸门确实构造了同毫秒 tie(两条 ts 相同) | **自证构造成功**, 防"时钟没冻住所以顺序看起来对" |
+| 4 | 同毫秒 tie 仍按请求发出序排列(10.0 → 10.5) | 核心: 回退成单键排序立刻变红 |
+| 5 | startTs 原样保留(10 / 10.5) | 防排序把字段改坏 |
+| 6-7 | 缺 startTs(按 0)混排: 均落库 + 排在 5.5 之前 | 比较器不产生 NaN 乱序 |
+| 8-10 | 跨毫秒: 均落库 + ts 严格递增 + 仍按发出序 | 回归: 复合比较没把跨毫秒序改坏 |
+
+闸门**不靠 sleep 错开时间戳**(`check_engine_edge.js:87` 的 `sleep(4)` 恰好绕开了唯一会坏的路径):
+用可控时钟把两条请求的 ts 钉在同一毫秒, 并让 mock 的 `storage.get` 同步回调研判 KEY_TABS,
+使 requestWillBeSent 在 `fire()` 调用栈内就地派发; 等待落库一律轮询观测。
+
+### R2 闸门段说明更正
+
+(本节标题已按 R4 落地后的实际断言数更正, 内容不变。)
+
+### R2 回退自证(两处独立回退)
+
+```
+[revert-A 只按 ts] exit=1 | === 引擎不变式 FAIL: 3 ===
+         FAIL 同毫秒 tie 仍按请求发出序排列(startTs 10.0 → 10.5): /t2,/t1
+         FAIL startTs 原样保留(10 / 10.5): 10.5,10
+         FAIL 缺 startTs 按 0 处理, 仍排在 5.5 之前(比较器不产生 NaN 乱序): /v2,/v1
+[revert-B 无 tiebreak] exit=1 | === 引擎不变式 FAIL: 3 ===
+         FAIL 同毫秒 tie 仍按请求发出序排列(startTs 10.0 → 10.5): /t2,/t1
+         FAIL startTs 原样保留(10 / 10.5): 10.5,10
+         FAIL 缺 startTs 按 0 处理, 仍排在 5.5 之前(比较器不产生 NaN 乱序): /v2,/v1
+还原字节一致: true
+```
+
+- revert-A = 整体回到旧的单键排序; revert-B = 保留复合结构、只把 `return (a.startTs || 0) - (b.startTs || 0);`
+  换成 `return 0;`(单独验证 tiebreak 承担行为, 而不是被别的代码顺手救回)。两次都红 3 条, 还原后闸门
+  重新 `=== 引擎不变式 PASS (10 项) ===`。
+
+受影响套件复跑(只跑受影响, 未跑全量): `check_engine_edge` / `check_engine_resilience` /
+`check_engine_invariants` / `check_auto_chain` / `check_bg_detach_guard` / `check_diag_bounds` 全 PASS;
+`check_assert_count` PASS(1937 断言 / 82 suite); `check_doc_counts` PASS(90 suites)。
+
+### R4(P1) 三条独立子缺陷
+
+**(a) 3000 条溢出静默丢最旧** —— `background.js:536`
+
+```js
+while (arr.length > MAX_ENTRIES) arr.shift();
+```
+
+整个函数没有第二行 diag。同一函数下方 `trimToFit` 丢条目时**是**记诊断的
+(`超存储配额预算, 丢弃最旧 N 条`), 两条丢弃路径口径不一致。
+
+复现(`node r4_repro.js a`): 预置 3000 条已满 + 再录 1 条。
+
+```
+[R4-a] 入库条数: 3000 (上限 3000)
+[R4-a] 最旧的 /s0 还在吗: false
+[R4-a] 最新的 /n1 在吗: true
+[R4-a] 诊断里提到丢弃的条目: []
+[R4-a] 诊断总条数: 0
+[R4-a] 判定: 溢出发生了, 但诊断零记录 —— 用户无从得知最旧的条目已被悄悄删掉
+```
+
+**(b) base64 响应体被占位字符串顶替, 无机器可判标记** —— `background.js:395`
+
+```js
+item.response = body && body.base64Encoded
+  ? "(binary/base64 略)"
+  : utf8Slice((body && body.body) || "", 200 * 1024);
+```
+
+占位串和真实文本长得一样, 下游(面板详情 / HAR 导出 / 链路重放)无从区分「响应体真的是这串字」
+与「原本是二进制被丢了」。
+
+复现(`node r4_repro.js b`): 让 mock 的 `Network.getResponseBody` 回 `base64Encoded: true`。
+
+```
+[R4-b] 条目 response 字段: "(binary/base64 略)"
+[R4-b] 是否带 responseBase64 标记: false
+[R4-b] 条目全部字段: id,method,url,path,query,headers,body,status,mime,response,ts,startTs,durationMs
+[R4-b] 判定: 二进制体被替换成占位字符串, 没有任何机器可判标记 —— 导出/重放侧无法区分「真的是这串文本」与「原本是二进制」
+```
+
+**(c) stopRecording 只 detach 不 flush, 在途请求永久蒸发** —— `background.js:697`
+
+```js
+await detachAll();
+recState = "idle";
+```
+
+`pending` 里还没等到 loadingFinished 的条目既不入库也不清空: 停止后 tab 已从 KEY_TABS 移除,
+迟到的 loadingFinished 会被 onEvent 的 tab 过滤挡掉, `pending` 里那条永远躺着。
+
+复现(`node r4_repro.js c`): requestWillBeSent 落地后立刻 stop, 再补迟到的 response/finished。
+
+```
+[R4-c] stop 前 pending: 1 | stop 后 pending: 1 | 迟到事件后 pending: 1
+[R4-c] stop 返回: {"ok":true}
+[R4-c] /h1 入库吗: false | 库内条数: 0
+[R4-c] 判定: 在途条目既没落库也没被清: stop 只 detach 不 flush, pending 残留 1 条, 该请求永久蒸发
+```
+
+### R4 修复
+
+**(a) 溢出留痕** —— `background.js` 排序裁剪段:
+
+```js
+if (arr.length > MAX_ENTRIES) {
+  const dropped = arr.length - MAX_ENTRIES;
+  while (arr.length > MAX_ENTRIES) arr.shift();
+  // 静默 shift 等于无声丢数据(与下面 trimToFit 丢条目时记 diag 的口径不一致):
+  // 溢出必须留痕, 否则用户导出后无从得知早期流量已被裁掉(v1.3.8 修 R4-a)。
+  diag("warn", "harvest", `条目数超上限 ${MAX_ENTRIES}, 丢弃最旧 ${dropped} 条`);
+}
+```
+
+**(b) 占位串带机器可判标记** —— `getResponseBody` 回调内:
+
+```js
+item.response = body && body.base64Encoded
+  ? "(binary/base64 略)"
+  : utf8Slice((body && body.body) || "", 200 * 1024);
+// 占位串与真实文本长得一样, 必须带机器可判标记(v1.3.8 修 R4-b)
+if (body && body.base64Encoded) item.responseBase64 = true;
+```
+
+只在**真的**是二进制体时写这个字段: 文本条目不带该键(不新增存储负担、也不改既有展示串)。
+
+**(c) stop 先落库在途条目** —— 新增 `flushPendingEntries()`(放在 `pushEntry` 之前), 并在
+`stopRecording` 的 `detachAll()` 之前调用:
+
+```js
+async function flushPendingEntries() {
+  if (!pending.size) return;
+  const n = pending.size;
+  const items = [...pending.values()];
+  pending.clear();
+  for (const it of items) {
+    if (it.response === null || it.response === undefined) it.response = "";
+    it.incomplete = true;          // 没等到 loadingFinished: 响应体缺失
+    pushEntry(it);
+  }
+  await Promise.resolve();   // 跨过 pushEntry 的封批微任务, 让 flushEntries 真正入队
+  await harvestQueue;        // 等本批写盘(失败由链内 diag 记录并自愈, 不会粘死)
+  diag("info", "harvest", `停止录制: 在途 ${n} 条已落库(标记 incomplete, 响应体缺失)`);
+}
+```
+
+复用 `pushEntry` 的攒批/`__clearSeq` 竞态守卫, 不另起写入路径(否则 clearHarvest 的复活防护会漏)。
+
+### R4 闸门(在 check_engine_invariants.js 追加 12 断言, 全文件 22)
+
+| # | 断言 | 只有本修复才能挡住的口径 |
+|---|---|---|
+| 11-14 | 预置 3000 条 + 录 1 条: 新条目入库 / 条数夹在 3000 / **/s0 真被裁掉** / 诊断含「丢弃最旧 1 条」 | 只断言 diag 会在"根本没溢出"时假绿, 故先证溢出真实发生 |
+| 15-17 | base64 体: `responseBase64 === true` / 占位串保持原样 / 文本体**不带**该键 | 后半段防"一律标记"的假修复 |
+| 18-22 | stop: pending 先到 1 / 返回 ok / `/p1` 已落库 / `incomplete===true` 且 `response===""` / pending 归零 | 同时验"数据保住了"与"死条目清掉了", 缺一即半修 |
+
+### R4 回退自证(三处独立回退)
+
+```
+[revert-A 删溢出诊断] exit=1 | === 引擎不变式 FAIL: 1 ===
+         FAIL 溢出写了诊断且带丢弃条数: []
+[revert-B 删 base64 标记] exit=1 | === 引擎不变式 FAIL: 1 ===
+         FAIL base64 响应体带 responseBase64 标记: undefined
+[revert-C 删 stop-flush] exit=1 | === 引擎不变式 FAIL: 3 ===
+         FAIL stop 前在途的 /p1 已落库(不再永久蒸发)
+         FAIL 落库条目带 incomplete 标记且 response 为空: undefined
+         FAIL stop 后 pending 已清空(不留死条目): 1
+还原字节一致: true
+```
+
+受影响套件复跑: `check_engine_edge` / `check_engine_resilience` / `check_engine_invariants` /
+`check_auto_chain` / `check_bg_detach_guard` / `check_diag_bounds` / `check_export_clean` /
+`check_export_fields` / `check_ai_full` 全 PASS; `check_assert_count` / `check_doc_counts` PASS。
+条目形状多了 `responseBase64` / `incomplete` 两个**可选**字段, 导出侧闸门(clean/fields)复跑确认不误伤。
+
+### R5(P1) detach 不同步状态 + 冷启动窗口丢帧
+
+**(a) 用户点黄条「取消」后, 界面继续显「录制中」** —— `background.js:179`
+
+`onDetach` 只调 `detachTab()`(`background.js:158`), 后者只把 tabId 从 `toolbox.debugTabs` 摘掉;
+`recState` / `toolbox.recording` / 徽章**一个都没动**。录制的实际能力(constructed 调试会话)已经没了。
+
+```
+[R5-a] detach 前: recState=recording attachedTabs=1
+[R5-a] detach 后: recState=recording attachedTabs=0
+[R5-a] 徽章文本历史: ["REC"]
+[R5-a] storage recording 值: "recording"
+[R5-a] debugTabs: []
+[R5-a] 判定: attach 记录已清(debugTabs 空), 但 recState 仍 recording、徽章仍 REC —— 录制实际已中断, 界面继续骗人
+```
+
+**(b) 冷启动窗口只缓冲请求, 响应与完成事件直接丢** —— `background.js:362`
+
+```js
+if (domainsCache === null) { earlyBuffer.push(params); return; }
+```
+
+worker 被事件唤醒时 `domainsCache` 还是 null, requestWillBeSent 进缓冲区等 `stateReady` 补处理;
+但同期到达的 responseReceived / loadingFinished 走的是另一条分支 —— 那时 `pending` 里还没有对应条目,
+`if (!item) return;` 直接丢掉。补处理只重放请求, 不重放响应, 结果是**留下一条永不完成的 pending**。
+
+```
+[R5-b] 窗口内到达的 /k1 入库吗: false
+[R5-b] 库内条目: []
+[R5-b] pending 残留(死条目): 1 | recState: recording
+[R5-b] 判定: 冷启动窗口只缓冲了 requestWillBeSent, response/finished 无 pending 可查直接丢; 补处理后反留下 1 条永不完成的 pending 残留
+```
+
+### R5 修复
+
+**(a) 分离即回 idle** —— `chrome.debugger.onDetach` 处理器:
+
+```js
+detachTab(src.tabId).then(async () => {
+  const r = await chrome.storage.local.get([KEY_TABS]);
+  const left = Array.isArray(r[KEY_TABS]) ? r[KEY_TABS] : [];
+  if (left.length || recState === "idle") return;  // 还有别的 tab 在录: 只清该 tab 的记录
+  recState = "idle";
+  try { await chrome.storage.local.set({ [KEY_REC]: "idle" }); } catch { /* 诊断通道会暴露 */ }
+  stopKeepalive();             // 没有录制任务了, 允许 worker 休眠
+  setBadge("idle");
+  diag("info", "attach", "全部录制 tab 已分离, 录制状态回 idle");
+});
+```
+
+判据用「清完 attach 记录后 KEY_TABS 是否为空」, 而不是「被分离的就是录制 tab」—— 多 tab 录制时
+只掉一个不该整体停录。三条状态出口(内存 `recState` / storage `KEY_REC` / 徽章)一起改, 缺一条
+就会出现本轮取证里的那种分裂态。
+
+**(b) 冷启动窗口缓冲全部网络事件** —— `dispatchNetworkEvent` 入口:
+
+```js
+if (domainsCache === null && method.startsWith("Network.")) {
+  if (earlyBuffer.length >= EARLY_BUFFER_MAX) {
+    if (!earlyBufferDropped) {
+      earlyBufferDropped = true;
+      diag("error", "harvest", `冷启动窗口缓冲溢出(${EARLY_BUFFER_MAX} 条), 后续事件丢弃; 域名清单可能一直没加载成功`);
+    }
+    return;
+  }
+  earlyBuffer.push({ src, method, params });
+  return;
+}
+```
+
+配套改动: `earlyBuffer` 现在存 `{src, method, params}`; `stateReady` 的补处理从
+`for (const p of buf) handleRequestWillBeSent(p)` 改成
+`for (const ev of buf) dispatchNetworkEvent(ev.src, ev.method, ev.params)` —— **按原序重放**,
+request/response/finished 三条一起过, 于是不会留下「补处理出请求、响应永远不来」的死条目。
+另加 `EARLY_BUFFER_MAX = 5000` 与一次性溢出诊断: 域名清单始终加载不出来时(存储异常), 不能让
+每个网络事件都往数组里塞(内存泄漏), 但也不能静默丢 —— 首次溢出必留一条 error 级诊断。
+
+顺便: `check_early_buffer.js` 的 e4/e5 是在断言**旧源码字面形态**。缓冲改到派发入口后原串不再存在,
+断言**改写而非删除**, 且强度提高: e4 改为「入口守卫必须早于 `requestWillBeSent` 分支 + 缓冲项保留
+method」, e5 增加「按原序重放」要求(防止再退回只重放请求)。
+
+### R5 闸门(在 check_engine_invariants.js 追加场景 0 与场景 7, 全文件 31 断言)
+
+| # | 断言 | 只有本修复才能挡住的口径 |
+|---|---|---|
+| 1-3 | 冷启动窗口内发的 request+response+finished 全落库 / 条目**完整**(status 200 + 响应体) / pending 归零 | 只断言「落库」会在只重放请求时假绿(条目半截也算落库), 故同时验完整性 |
+| 22-26 | detach 前 recState=recording / 徽章被清空(历史 `["REC",""]`) / recState 回 idle / storage `KEY_REC` 同步 idle / attach 记录清空 | 去掉状态复位即 3 条同时红; 只改内存不改 storage 也会红 |
+| 27 | 重开录制成功(为 stop-flush 场景准备) | 自证场景 7 真的把录制停掉了, 否则后面的 stop-flush 断言是空转 |
+
+闸门**在场景 0 上不使用任何等待**: `req()`/`finish()` 在 `require(background.js)` 之后同步派发,
+此刻 `stateReady` 的 `await loadRuntimeState()` 还没回来, `domainsCache` 必然仍是 null —— 窗口是
+**被构造出来的**, 不是靠时间碰巧。
+
+### R5 回退自证(两处独立回退)
+
+```
+[revert-A 删 detach 状态复位] exit=1 | === 引擎不变式 FAIL: 3 ===
+         FAIL detach 后徽章被清空(不再显示 REC): ["REC"]
+         FAIL detach 后 recState 回 idle: recording
+         FAIL storage 里的录制状态同步为 idle: "recording"
+[revert-B 补处理只重放请求] exit=1 | === 引擎不变式 FAIL: 3 ===
+         FAIL 冷启动窗口内的请求在补处理后落库(不再只重放 requestWillBeSent)
+         FAIL 冷启动条目是完整条目(有状态与响应体): undefined
+         FAIL 冷启动补处理后 pending 无残留死条目: 1
+还原字节一致: true
+```
+
+revert-B 正是**旧实现的等价注入**: 缓冲全留、但补处理只重放请求 —— 复现出「条目蒸发 + pending 残留 1 条」
+两个原始症状, 证明修复点确实在重放这一环, 不在别处。
+
+受影响套件复跑(以 `earlyBuffer|onDetach|setBadgeText|debugTabs` 命中面为准, 16 个文件):
+`check_bg_detach_guard` / `check_bridge_attach` / `check_console` / `check_diag_bounds` /
+`check_duration_unit` / `check_early_buffer` / `check_engine_edge` / `check_engine_invariants` /
+`check_engine_resilience` / `check_entry_health` / `check_page_tab` / `check_poll_perf` /
+`check_record_all` / `check_skill_truncate` / `check_user_journey` / `e2e_full_user` 全 PASS;
+`check_assert_count` PASS(1958 断言 / 82 suite)、`check_doc_counts` PASS。
+
+### R3(P2) diag 计量口径: 码元 ≠ 字节
+
+缺陷位置 `background.js:422`(计量) 与 `414`(上限)
+
+```js
+const MAX_DIAG_BYTES = 512 * 1024;
+diagBytes += JSON.stringify(e).length;                       // ← UTF-16 码元数
+diagBytes -= JSON.stringify(diagEntries.shift()).length;
+```
+
+常量名写着 BYTES、上限写 512KB, 计量却用 `String.length`(UTF-16 码元)。中文单字 1 码元 / 3 字节,
+中文越多偏得越多(最多 3 倍)。现有 `test/check_diag_bounds.js:73` 全用 ASCII —— 恰好 1 码元 = 1 字节,
+这条口径错误永远暴露不出来。
+
+复现(`D:/GitHub/.tmp/r3_repro.js`): 用 `vm` 加载**真实** `background.js`, 仅在内存里追加探针导出
+`diag`/`diagBytes`(磁盘文件不改), 然后灌 1200 条 200 字中文诊断。
+
+```
+[R3] 保留条数: 1000 | MAX_DIAG_ENTRIES: 1000
+[R3] 单条: 码元数 = 264 | UTF-8 字节 = 664
+[R3] diagBytes(实现计量) = 265000 | 声称上限 = 524288
+[R3] 保留内容的真实 UTF-8 字节 = 666001
+[R3] 真实字节是否已超 512KB 上限: true
+[R3] 判定: 口径不一致复现 —— 计量认为 265000 <= 524288, 实际占用 666001 字节(超上限 1.27 倍)。中文占比越高偏得越多(单字 1 码元 / 3 字节 = 3 倍)
+```
+
+### 下一步
+
+四条按 R2 → R4 → R5 → R3 顺序各自走「手术式修改 → 加闸门 → 回退自证 → 只跑受影响单测」,
+全部落地后合发 **v1.3.8**。
+
+### R3 修复
+
+`background.js` 新增 `utf8Len()`(按码点累加, 与 `utf8Slice` 同一口径), 计量两处改用它:
+
+```js
+function utf8Len(str) {
+  const s = String(str == null ? "" : str);
+  let bytes = 0;
+  for (let i = 0; i < s.length; i++) {
+    const cp = s.codePointAt(i);
+    if (cp > 0xffff) { bytes += 4; i++; }        // 代理对: 4 字节, 占两个码元
+    else if (cp > 0x7ff) bytes += 3;
+    else if (cp > 0x7f) bytes += 2;
+    else bytes += 1;
+  }
+  return bytes;
+}
+
+diagBytes += utf8Len(JSON.stringify(e));   // 按 UTF-8 字节计, 与 512KB 的承诺同口径
+…
+diagBytes -= utf8Len(JSON.stringify(diagEntries.shift()));
+```
+
+不引 `Buffer.byteLength`: 那是 Node 专有 API, 扩展跑在 service worker 里没有。`utf8Len` 与本文件
+已有的 `utf8Slice` 是同一套码点算法 —— 一个用来"按字节截断", 一个用来"按字节计量", 口径必须同源,
+否则会出现"截断按字节、计量按码元"这种更难查的分裂。
+
+### R3 闸门(check_diag_bounds.js 追加 3 断言, 场景 ⑦)
+
+| 断言 | 为什么只有它能挡住 |
+|---|---|
+| 中文日志: 计量口径 = UTF-8 字节 | 判据是 `diagBytes === Σ Buffer.byteLength(JSON.stringify(entry))`; 旧实现按码元计, 此处必不相等 |
+| 中文日志: 真实占用不超 512KB | 直接量真实字节, 不采信模块自报的口径 |
+| 中文日志: 字节界真的触发(条数 < 1000) | 若真按字节算, 1500B/条时 1000 条会到 1.5MB → 条数必须先被字节界压下来 |
+
+既有 ⑥ 组(999/1001 条)只用 ASCII, 每条 1 字节/码元, 两种口径数值相同 —— 这正是 R3 逃过 88 项闸门的原因。
+新场景全部用中文(3 字节/字符), 让两种口径必然分叉。
+
+### R3 回退自证(计量退回码元计数)
+
+```
+[revert 码元计量] exit=1 | === diag bounds FAIL: 3 ===
+         FAIL 中文日志: 计量口径 = UTF-8 字节(不再按码元) → {"claimed":364000,"real":952000}
+         FAIL 中文日志: 真实占用不超 512KB → 952000
+         FAIL 中文日志: 字节界真的触发(条数 < 1000) → 1000
+还原字节一致: true
+```
+
+回退后模块自报 364000 字节, 真实 952000 字节(2.6 倍) —— 与取证时的 265000/666001(1.27 倍)同向同因。
+
+受影响套件: `check_diag_bounds`(PASS, 含新场景) / `check_engine_invariants` / `check_engine_edge` /
+`check_engine_resilience` / `check_ai_full`(诊断快照口径) / `check_assert_count` / `check_doc_counts` 全 PASS。
+
 ## R126 · v1.3.7 (2026-11-26)
 
 ### R1(P0) 取证: 一次 storage 读失败, 之后所有录制条目**永久**不入库
@@ -142,7 +585,7 @@ harvestQueue = harvestQueue.catch((e) => {
 | R1 自证(去掉读兜底) | 同上 | **FAIL: 5** → 还原后绿 |
 | R1 自证(只去链尾 catch) | 同上 | **FAIL: 2** → 还原后绿 |
 | 受影响套件 | `check_engine_edge` / `check_auto_chain` / `check_diag_bounds` / `check_bg_detach_guard` / `check_assert_count` | 全部 PASS |
-| 全量回归 | `node test/run_all.js` | 89/89 PASS |
+| 全量回归 | `node test/run_all.js` | 90/90 PASS |
 
 ## R125 · v1.3.6 (2026-11-24)
 
@@ -249,11 +692,14 @@ harvestQueue = harvestQueue.catch((e) => {
 | 基线校对 | `node test/check_assert_count.js` | PASS(1911 条 / 80 suite, 无漂移提示) |
 | 全量回归 | `node test/run_all.js` | 88/88 PASS |
 
-### 待批(AGENTS §5 ask-first, 未实施)
+### 待批 → 已修
 
-引擎审计 R1(P0)/R2/R4/R5(P1)/R3(P2) 均落在 `background.js` 录制核心, 已列入 CHANGELOG
-待批表。其中 **R2 最需优先**: 亚毫秒 `startTs` 已存在却未参与排序 → 同毫秒并发必倒挂,
-每次录制都在发生, 且 `check_engine_edge` 必须 `sleep(4)` 才能断言(结构上测不到 tie)。
+R1(P0)/R2/R4/R5(P1)/R3(P2) 经用户批准(§5 ask-first)后按 R1 → v1.3.7、其余 → v1.3.8
+两批修完, 逐条取证/修复/闸门/回退自证见 `## R127`。
+
+其中 **R2 的判断被实测修正**: 亚毫秒 `startTs` 确实必须参与排序, 但只能做 tiebreak ——
+WebSocket 帧与旧版条目的 `startTs` 恒为 0, 拿它当主键会把这一整类条目顶到时间线最前。
+详见 R127 的契约偏差记录。
 
 ---
 

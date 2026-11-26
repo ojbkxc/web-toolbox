@@ -59,7 +59,9 @@ function matchDomain(host, domains) {
 // ---- 录制引擎运行时状态(常驻模块变量, worker 唤醒时重载) ----
 let domainsCache = null; // null = 还没从 storage 加载完(冷启动窗口)
 let recState = "idle";   // "idle" | "recording" | "paused"
-const earlyBuffer = [];  // 冷启动窗口到达的请求, 状态加载完补处理
+const earlyBuffer = [];  // 冷启动窗口到达的网络事件({src, method, params}), 状态加载完按序补处理
+const EARLY_BUFFER_MAX = 5000;  // 上限: 域名清单始终加载不出来(存储异常)时不许无限增长
+let earlyBufferDropped = false;
 const unmatchedHosts = new Map(); // 被域名过滤掉的主机 → 次数("为什么录不上"的诊断线索)
 
 async function loadRuntimeState() {
@@ -73,7 +75,7 @@ const stateReady = (async () => {
   try {
     await loadRuntimeState();
     const buf = earlyBuffer.splice(0);
-    for (const p of buf) handleRequestWillBeSent(p);
+    for (const ev of buf) dispatchNetworkEvent(ev.src, ev.method, ev.params);  // 按原序重放(含 response/finished)
     // worker 被杀过又醒来(或浏览器重启后扩展自动激活): 恢复图标角标,
     // 让"还在录/暂停"在图标上一眼可见(recospec restoreActiveSession 同款)
     if (recState !== "idle") setBadge(recState);
@@ -183,7 +185,19 @@ chrome.debugger.onDetach.addListener((src) => {
     const own = globalThis.toolboxBridgeOwnDetach;
     if (own && own.has(src.tabId)) return;
     diag("warn", "attach", `tab ${src.tabId} 调试器已分离(用户点了黄条"取消"? 或被其他工具抢走)`);
-    detachTab(src.tabId);
+    // 分离 = 录制能力真的没了(用户点黄条"取消" / 被别的调试工具抢走): 状态机必须跟着回 idle。
+    // 此前只清 attach 记录, recState 仍是 recording、徽章仍是 REC、面板照旧报"录制中",
+    // 但后续事件一条都进不来 —— 界面在骗人(v1.3.8 修 R5-a)。
+    detachTab(src.tabId).then(async () => {
+      const r = await chrome.storage.local.get([KEY_TABS]);
+      const left = Array.isArray(r[KEY_TABS]) ? r[KEY_TABS] : [];
+      if (left.length || recState === "idle") return;  // 还有别的 tab 在录: 只清该 tab 的记录
+      recState = "idle";
+      try { await chrome.storage.local.set({ [KEY_REC]: "idle" }); } catch { /* 诊断通道会暴露 */ }
+      stopKeepalive();             // 没有录制任务了, 允许 worker 休眠
+      setBadge("idle");
+      diag("info", "attach", "全部录制 tab 已分离, 录制状态回 idle");
+    });
   }
 });
 
@@ -349,6 +363,21 @@ function clearConsole() {
 function dispatchNetworkEvent(src, method, params) {
   // 控制台日志与网络请求分开收集: 日志只是诊断辅助, 不进 harvest(不污染导出集,
   // 不占录制配额), 独立有界缓冲, 停止录制后仍可查看排障。
+  // 冷启动窗口(域名清单还没从 storage 加载完): **所有**网络事件按序缓冲, stateReady 后补处理。
+  // 只缓冲 requestWillBeSent 是不够的(v1.3.8 修 R5-b): 同窗口到达的 response/finished 当时
+  // pending 里还没有对应条目 → 直接 return 丢弃, 补处理只重放请求, 于是留下一条永不完成的
+  // 死条目: 该请求既不入库也清不掉。缓冲设上限, 域名清单始终加载不出来时不至于撑爆内存。
+  if (domainsCache === null && method.startsWith("Network.")) {
+    if (earlyBuffer.length >= EARLY_BUFFER_MAX) {
+      if (!earlyBufferDropped) {
+        earlyBufferDropped = true;
+        diag("error", "harvest", `冷启动窗口缓冲溢出(${EARLY_BUFFER_MAX} 条), 后续事件丢弃; 域名清单可能一直没加载成功`);
+      }
+      return;
+    }
+    earlyBuffer.push({ src, method, params });
+    return;
+  }
   if (method === "Runtime.consoleAPICalled") {
     pushConsole(src.tabId, "console", params);
     return;
@@ -358,8 +387,6 @@ function dispatchNetworkEvent(src, method, params) {
     return;
   }
   if (method === "Network.requestWillBeSent") {
-    // 冷启动窗口(域名清单还没从 storage 加载完): 缓冲, stateReady 完成后补处理
-    if (domainsCache === null) { earlyBuffer.push(params); return; }
     handleRequestWillBeSent(params);
     return;
   }
@@ -395,6 +422,9 @@ function dispatchNetworkEvent(src, method, params) {
         item.response = body && body.base64Encoded
           ? "(binary/base64 略)"
           : utf8Slice((body && body.body) || "", 200 * 1024);
+        // 占位串与真实文本长得一样, 必须带机器可判标记(v1.3.8 修 R4-b): 导出/HAR/链路重放
+        // 才能知道「这条响应体原本是二进制, 已被丢弃」, 而不是真收到了这串字。
+        if (body && body.base64Encoded) item.responseBase64 = true;
       } catch {
         item.response = ""; // 无 body(如 204)或已被浏览器丢弃
       }
@@ -415,13 +445,30 @@ const MAX_DIAG_BYTES = 512 * 1024;
 const diagEntries = [];
 let diagBytes = 0;
 
+// 单串 UTF-8 字节数(按码点累加): 与 utf8Slice 同一口径。
+// 为什么不能直接 .length: 那是 UTF-16 码元数, 中文 1 码元 = 3 字节 —— 用码元计量等于把
+// 512KB 上限悄悄放大到 ~1.5MB(实测 265000 码元 vs 666001 字节, 超上限 1.27 倍),
+// 而注释/popup 承诺的是 512KB(v1.3.8 修 R3)。
+function utf8Len(str) {
+  const s = String(str == null ? "" : str);
+  let bytes = 0;
+  for (let i = 0; i < s.length; i++) {
+    const cp = s.codePointAt(i);
+    if (cp > 0xffff) { bytes += 4; i++; }        // 代理对: 4 字节, 占两个码元
+    else if (cp > 0x7ff) bytes += 3;
+    else if (cp > 0x7f) bytes += 2;
+    else bytes += 1;
+  }
+  return bytes;
+}
+
 function diag(level, source, message) {
   try {
     const e = { ts: Date.now(), level, source, message: String(message).slice(0, 500) };
     diagEntries.push(e);
-    diagBytes += JSON.stringify(e).length;
+    diagBytes += utf8Len(JSON.stringify(e));   // 按 UTF-8 字节计, 与 512KB 的承诺同口径
     while (diagEntries.length && (diagEntries.length > MAX_DIAG_ENTRIES || diagBytes > MAX_DIAG_BYTES)) {
-      diagBytes -= JSON.stringify(diagEntries.shift()).length;
+      diagBytes -= utf8Len(JSON.stringify(diagEntries.shift()));
     }
   } catch { /* 诊断自身永不影响主流程 */ }
 }
@@ -530,10 +577,24 @@ function flushEntries(items) {
     for (const it of items) arr.push(it);
     // 入列序 = 响应完成序(loadingFinished 异步取回 body 后才 push), 慢快接口并发时
     // 与请求时间序错乱 —— 列表时间线、链路重放/JMX 采样器顺序都会乱。
-    // ts 是 requestWillBeSent 到达时刻(ISO 串, 到达序=CDP 发序=请求发出序),
-    // 每次写入前整体按 ts 稳定排序(同 ms 的并发保持入列相对序, 旧数据无 ts 排最后)。
-    arr.sort((a, b) => (a.ts || "").localeCompare(b.ts || ""));
-    while (arr.length > MAX_ENTRIES) arr.shift();
+    // 排序键用 (ts, startTs) 复合比较: ts 是 requestWillBeSent 到达时刻(ISO 串, 毫秒精度),
+    // 同一毫秒的并发请求 localeCompare 返回 0 —— 只用 ts 时稳定排序会原样保留入列序(响应完成序),
+    // 慢接口先完成就排到前面(v1.3.8 修: 同毫秒 tie 的时间线倒挂)。
+    // 毫秒相同时用 CDP 单调时钟 startTs(亚毫秒)定序; 缺 startTs 的旧条目按 0 处理(差为 0 → 保持稳定序),
+    // 两字段都没有的畸形条目互相比较恒等, 不会把新数据顶乱。
+    arr.sort((a, b) => {
+      const ta = a.ts || "";
+      const tb = b.ts || "";
+      if (ta !== tb) return ta.localeCompare(tb);
+      return (a.startTs || 0) - (b.startTs || 0);
+    });
+    if (arr.length > MAX_ENTRIES) {
+      const dropped = arr.length - MAX_ENTRIES;
+      while (arr.length > MAX_ENTRIES) arr.shift();
+      // 静默 shift 等于无声丢数据(与下面 trimToFit 丢条目时记 diag 的口径不一致):
+      // 溢出必须留痕, 否则用户导出后无从得知早期流量已被裁掉(v1.3.8 修 R4-a)。
+      diag("warn", "harvest", `条目数超上限 ${MAX_ENTRIES}, 丢弃最旧 ${dropped} 条`);
+    }
     // trimToFit 首行对全库 stringify, 库达 V8 单串上限(~512MB)会 RangeError —— 按不变式
     // (本函数每批裁到 ≤7.5MB)不可达, 但防御成本一屏: 不 catch 的话 rejection 沿
     // harvestQueue 链传播无人接 → **链断, 后续所有录制写入永久哑掉**(比单批丢严重得多)。
@@ -580,6 +641,25 @@ function utf8Slice(str, maxBytes) {
     i += cp > 0xffff ? 2 : 1;   // 代理对占两个码元
   }
   return s.slice(0, i);
+}
+
+// 停止录制前把在途条目落库(v1.3.8 修 R4-c): 此前 stop 只 detachAll, pending 里的条目
+// 既不入库也不清; 停止后 tab 已从 KEY_TABS 移除, 迟到的 loadingFinished 会被 tab 过滤挡掉
+// → 该请求永久蒸发, 面板与导出里都看不到它。半截数据仍比没有数据有用:
+// 保留 URL/方法/请求头, response 置空并标 incomplete, 导出侧能识别「响应体缺失」。
+async function flushPendingEntries() {
+  if (!pending.size) return;
+  const n = pending.size;
+  const items = [...pending.values()];
+  pending.clear();
+  for (const it of items) {
+    if (it.response === null || it.response === undefined) it.response = "";
+    it.incomplete = true;
+    pushEntry(it);
+  }
+  await Promise.resolve();   // 跨过 pushEntry 的封批微任务, 让 flushEntries 真正入队
+  await harvestQueue;        // 等本批写盘(失败由链内 diag 记录并自愈, 不会粘死)
+  diag("info", "harvest", `停止录制: 在途 ${n} 条已落库(标记 incomplete, 响应体缺失)`);
 }
 
 function pushEntry(item) {
@@ -694,6 +774,7 @@ function toolboxHandleMessage(msg, sendResponse) {
   if (msg && msg.type === "stopRecording") {
     (async () => {
       try {
+        await flushPendingEntries(); // 在途条目先落库再 detach(v1.3.8 修 R4-c)
         await detachAll();
         recState = "idle";
         await chrome.storage.local.set({ [KEY_REC]: "idle" });

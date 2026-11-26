@@ -117,5 +117,19 @@ function newEnv() {
   ok("闸门自证: 裁剪是 FIFO(留最新, 首条不是 v0)", firstMsg !== "v0", firstMsg);
 }
 
+// ---- ⑦ 字节界按 UTF-8 字节计(中文内容; 旧实现用 .length = UTF-16 码元, 测不出口径错) ----
+// 中文 1 字符 = 3 字节: 用码元计量会把 512KB 上限放大到 ~1.5MB。判据不是"看着差不多",
+// 而是「模块自己报的 diagBytes」必须等于「逐条 JSON.stringify 后的真实 UTF-8 字节和」。
+{
+  const { sandbox, read } = newEnv();
+  for (let i = 0; i < 2000; i++) sandbox.diag("warn", "attach", "测" + String(i).padEnd(297, "试"));
+  const ents = read("diagEntries");
+  const real = ents.reduce((s, e) => s + Buffer.byteLength(JSON.stringify(e), "utf8"), 0);
+  const claimed = read("diagBytes");
+  ok("中文日志: 计量口径 = UTF-8 字节(不再按码元)", claimed === real, { claimed, real });
+  ok("中文日志: 真实占用不超 512KB", real <= 512 * 1024, real);
+  ok("中文日志: 字节界真的触发(条数 < 1000)", ents.length < 1000 && ents.length > 0, ents.length);
+}
+
 console.log(fails ? `\n=== diag bounds FAIL: ${fails} ===` : "\n=== diag bounds PASS ===");
 process.exit(fails ? 1 : 0);

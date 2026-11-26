@@ -100,8 +100,17 @@ function fire(method, params) {
   // 冷启动窗口的域名过滤语义: 补处理走 handleRequestWillBeSent 同一函数,
   // 非授权域名的请求被丢(不是缓冲就全收) —— 静态断言分支形态。
   const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8').replace(/\r/g, '');
-  assert(bg.includes('if (domainsCache === null) { earlyBuffer.push(params); return; }'), 'e4. 冷启动缓冲分支代码在(域名过滤前置)');
-  assert(bg.includes('const buf = earlyBuffer.splice(0);\n    for (const p of buf) handleRequestWillBeSent(p);'), 'e5. stateReady 补处理 splice(0) 全量取出(防半处理)');
+  // v1.3.8 R5-b: 缓冲改包在派发入口, 且**所有**网络事件都进缓冲(同窗口的 response/finished
+  // 不再因 pending 里查不到条目而被丢)。断言改为「顺序关系 + 事件形状」: 入口守卫必须早于
+  // requestWillBeSent 分支, 否则域名过滤先跑就轮不到缓冲; 缓冲项必须保留 method, 补处理
+  // 才能重放 response/finished。
+  const iGuard = bg.indexOf('if (domainsCache === null && method.startsWith("Network.")) {');
+  const iReqBranch = bg.indexOf('if (method === "Network.requestWillBeSent") {');
+  assert(
+    iGuard >= 0 && iReqBranch > iGuard && bg.includes('earlyBuffer.push({ src, method, params });'),
+    'e4. 冷启动缓冲分支在派发入口(早于 requestWillBeSent 分支)且缓冲保留事件方法'
+  );
+  assert(bg.includes('const buf = earlyBuffer.splice(0);') && bg.includes('for (const ev of buf) dispatchNetworkEvent(ev.src, ev.method, ev.params);'), 'e5. stateReady 补处理 splice(0) 全量取出并按原序重放(防半处理/防只重放请求)');
   assert(bg.includes('function handleRequestWillBeSent(params)'), 'e6. 补处理复用 handleRequestWillBeSent(域名/状态过滤同路径)');
 
   // —— 零覆盖 handler 补测(v1.0.53 消息协议盘点): containsPermission / refreshDomainCache ——
