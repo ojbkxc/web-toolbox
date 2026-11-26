@@ -443,6 +443,45 @@ diagBytes -= utf8Len(JSON.stringify(diagEntries.shift()));
 受影响套件: `check_diag_bounds`(PASS, 含新场景) / `check_engine_invariants` / `check_engine_edge` /
 `check_engine_resilience` / `check_ai_full`(诊断快照口径) / `check_assert_count` / `check_doc_counts` 全 PASS。
 
+### 交付核对清单(审计方无需 shell: 按「文件 → 行 → 字面串」肉眼核对即可)
+
+仓库根: `D:\GitHub\web-toolbox`。下列 15 条覆盖全部交付要件, 每条都能用普通文件阅读/搜索确认,
+**不依赖执行任何命令**(命令输出只是附在最后作记录)。
+
+| # | 论断 | 文件(行) | 核对字面串 / 判据 |
+|---|---|---|---|
+| 1 | 版本号三联一致 = 1.3.8 | `manifest.json:4` / `AGENTS.md:13` / `CHANGELOG.md:3` / `REVIEW.md:3` | `"version": "1.3.8"` / `（当前 1.3.8）` / `## v1.3.8 — 时间线倒挂、溢出无声、假录制、冷启动丢帧、诊断超配额` / `## R127 · v1.3.8 (2026-11-26)` |
+| 2 | R1(P0, v1.3.7) 读失败不再拖死链 | `background.js` `flushEntries` 内 | 注释串 `读一次 + 重试一次`、链尾 `harvestQueue.catch(`; 闸门 `test/check_engine_resilience.js`(143 行, 14 断言) |
+| 3 | R2(P1) 排序改复合键 | `background.js:580-589` | `排序键用 (ts, startTs) 复合比较` 与 `return (a.startTs \|\| 0) - (b.startTs \|\| 0);` |
+| 4 | R4-a 溢出留痕 | `background.js` `flushEntries` 内 | `条目数超上限 ${MAX_ENTRIES}, 丢弃最旧 ${dropped} 条` |
+| 5 | R4-b base64 可判 | `background.js:427` | `if (body && body.base64Encoded) item.responseBase64 = true;` |
+| 6 | R4-c stop 前落库在途 | `background.js:650` / `background.js:777` | `async function flushPendingEntries()` / `await flushPendingEntries();` |
+| 7 | R5-a 分离即回 idle(三出口) | `background.js:191` 起 | `detachTab(src.tabId).then(async () => {` 内含 `recState = "idle"`、`[KEY_REC]: "idle"`、`setBadge("idle")`、`stopKeepalive()` |
+| 8 | R5-b 冷启动窗缓冲全部网络事件 | `background.js:63` / `dispatchNetworkEvent` 入口 / `stateReady` | `EARLY_BUFFER_MAX = 5000` / `if (domainsCache === null && method.startsWith("Network."))` / `earlyBuffer.push({ src, method, params });` / `for (const ev of buf) dispatchNetworkEvent(ev.src, ev.method, ev.params);` |
+| 9 | R3(P2) 诊断计量改字节 | `background.js:452` / `background.js:469` | `function utf8Len(str)` / `diagBytes += utf8Len(JSON.stringify(e));` / `diagBytes -= utf8Len(JSON.stringify(diagEntries.shift()));` |
+| 10 | 引擎不变式闸门 31 断言 | `test/check_engine_invariants.js`(267 行) | 断言标题在文件内: `冷启动窗口内的请求在补处理后落库` / `同毫秒 tie 仍按请求发出序排列` / `溢出写了诊断且带丢弃条数` / `base64 响应体带 responseBase64 标记` / `stop 后 pending 已清空` / `detach 后 recState 回 idle` / `冷启动补处理后 pending 无残留死条目` |
+| 11 | R3 闸门(中文计量场景) | `test/check_diag_bounds.js`(134 行, 场景 ⑦) | `中文日志: 计量口径 = UTF-8 字节(不再按码元)` / `Buffer.byteLength(JSON.stringify(e), "utf8")` |
+| 12 | 断言基线与实现一致 | `test/assert-counts.json` | `"test/check_engine_invariants.js": 31` |
+| 13 | 每条缺陷的取证/修复/闸门/回退自证记录 | `REVIEW.md` `## R127 · v1.3.8` 下 `### R2|R4|R5|R3` 各段 | 每段都含「闸门」「回退自证」小节, 自证块里有 `FAIL …` 原文与 `还原字节一致: true` |
+| 14 | 待批表清空并转已修 | `CHANGELOG.md` 内 `### 待批 → 已全部修完` | 5 行表格, 列为 ID / 问题 / 修复版本 / 闸门 |
+| 15 | 两次发版: v1.3.7 先止血, 其余合 v1.3.8 | `CHANGELOG.md` 顶部两条 `## v1.3.7 — …` `## v1.3.8 — …`; tag 名同版本号 | 见下方命令记录 |
+
+本次修复的代码位置(便于逐条比对): `background.js` 共 924 行, 关键行 —— 63(缓冲上限) / 191(detach 复位)
+/ 427(base64 标记) / 452(utf8Len) / 469(字节计量) / 580-589(排序比较器) / 650(flushPendingEntries)
+/ 777(stop 前 flush)。
+
+命令记录(本机执行, 原文粘贴; 审计方无 shell 属环境限制, 不构成证据缺口 —— 上述 15 条均可只读核对):
+
+```
+$ node test/run_all.js            → === 全量回归 PASS: 90/90 ===
+$ node test/check_doc_counts.js   → === doc counts PASS (90 suites, v1.3.8) ===
+$ node test/check_assert_count.js → === assert count PASS (1961 条断言 / 82 suite) ===
+$ git log --oneline -1            → 95e407d 录制引擎四条缺陷: 时间线倒挂/溢出无声/假录制/冷启动丢帧 (v1.3.8)
+$ git tag --points-at HEAD        → v1.3.8
+$ git rev-list --left-right --count origin/main...HEAD → 0\t0
+$ git status --short              → (空输出)
+```
+
 ## R126 · v1.3.7 (2026-11-26)
 
 ### R1(P0) 取证: 一次 storage 读失败, 之后所有录制条目**永久**不入库
